@@ -385,7 +385,10 @@
   <input type="range" id="aff_years" min="1" max="20" value="5" oninput="aff_years_v.textContent=this.value">
   <label>Threshold (min recent pubs) · <span class="val" id="aff_thr_v">2</span></label>
   <input type="range" id="aff_thr" min="1" max="10" value="2" oninput="aff_thr_v.textContent=this.value">
-  <label>Min prior pubs · <span class="val" id="aff_minp_v">5</span></label>
+  <!-- Not a filter: the server keeps every institution and moves those below
+       this number to the end of the list, flagged as a low base. "Min" read as
+       a cutoff, which it has never been. -->
+  <label>Low prior base · sorted last below <span class="val" id="aff_minp_v">5</span></label>
   <input type="range" id="aff_minp" min="0" max="20" value="5" oninput="aff_minp_v.textContent=this.value">
   <label>Limit · <span class="val" id="aff_lim_v">25</span></label>
   <input type="range" id="aff_lim" min="1" max="100" value="25" oninput="aff_lim_v.textContent=this.value">
@@ -1016,8 +1019,16 @@ function affTable(rows,journal){
   rows.forEach((r,i)=>{
     const recent=Number(r.recent_count)||0, prior=Number(r.prior_count)||0;
     let growth;
-    if(r.is_new||prior===0){
-      growth='<span class="badge-new">↑ New</span>';
+    // prior===0 means the prior window held no publications for this
+    // institution. It does NOT mean the institution is new: it may have
+    // existed and not published in this journal, or it may predate the
+    // mirror. Saying "New" asserted growth the number does not support, so
+    // the badge now states the measurement and the note below carries the
+    // interpretation. r.is_new is not consulted: the server sets it only when
+    // prior is both 0 and below minPrior, so with the slider at 0 it is never
+    // set at all, and prior===0 already covers every case it could cover.
+    if(prior===0){
+      growth='<span class="badge-new">no prior</span>';
     }else if(r.low_base){
       growth='<span class="badge-low">⚠️ low base</span>';
     }else{
@@ -1032,7 +1043,7 @@ function affTable(rows,journal){
       '<td class="n">'+num(prior)+'</td><td>'+growth+'</td></tr>';
   });
   h+='</tbody></table>';
-  h+='<p class="note">Institutions are OpenAlex entities; hospitals and parent universities are counted separately. "New" may reflect an institutional rename or merger, not real growth.</p>';
+  h+='<p class="note">Institutions are OpenAlex entities; hospitals and parent universities are counted separately. "no prior" means the earlier window held no publications for that institution — which can mean it did not exist yet, that it published nothing in this journal, or that it is a rename or merger of an entity counted separately before.</p>';
   return h;
 }
 
