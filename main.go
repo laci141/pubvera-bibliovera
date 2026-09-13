@@ -16,7 +16,8 @@
 //
 // Post-processing (done here, not in the CLI):
 //   - /authors:      minWorks filter removes single-consortium-paper authors.
-//   - /affiliations: minPrior grouping moves institutions with tiny prior base.
+//   - /affiliations: minPrior grouping moves institutions with tiny prior base
+//     to the end of the list; it never drops a row, and every row is flagged.
 //   - /drift:        passes through topic-share deltas between year windows.
 //   - /curate:       ranked reading lists for a topic, optionally scoped to a
 //     journal; also feeds the Rising Papers view (citations-per-year is computed
@@ -219,14 +220,23 @@ func handleAffiliations(w http.ResponseWriter, r *http.Request) {
 	lowBase := make([]map[string]any, 0)
 	for _, row := range rows {
 		prior := jsonInt(row["prior_count"])
+		// low_base is a claim about where the row sits relative to the
+		// slider, so every row carries it. A key present on some rows only
+		// becomes an empty cell in a spreadsheet, and empty reads as "no
+		// data", not as false.
+		//
+		// There is no is_new here any more. It asserted "this institution is
+		// new" from prior_count == 0, which the number does not support: the
+		// institution may have published nothing in this journal, or predate
+		// the mirror. It was also set inside this branch only, so with the
+		// slider at 0 it was never set at all and the exported file silently
+		// lost a column. prior_count already carries the fact exactly.
 		if prior >= minPrior {
+			row["low_base"] = false
 			normal = append(normal, row)
 			continue
 		}
 		row["low_base"] = true
-		if prior == 0 {
-			row["is_new"] = true
-		}
 		lowBase = append(lowBase, row)
 	}
 	writeJSONValue(w, append(normal, lowBase...))
