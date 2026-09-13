@@ -1,4 +1,10 @@
-# data.db is now committed via Git LFS (35k Lancet works, real growth% data).
+# Measured 2026-09-13: `git ls-tree origin/main` lists no data.db and
+# `git lfs ls-files` is empty, so the mirror is not in the repo in any form —
+# the earlier comment claiming it was committed via LFS was wrong. This line
+# only keeps the local copy out of a stray `git add -A`. Where the running
+# container's /app/data.db comes from is a separate open question.
+data.db
+
 # Only the large full-history backups stay local.
 data-full-228mb.db.bak
 data-116mb.bak
@@ -15,4 +21,5 @@ bin/server*
 # The linux CLI binary IS committed (image copies it): bin/thelancet-pp-cli-linux
 .DS_Store
 PROMPT.md
+.claude/
 cli-src-retraction/
