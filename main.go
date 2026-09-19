@@ -94,6 +94,42 @@ func crossrefMailto() string {
 	return strings.TrimSpace(os.Getenv("CROSSREF_MAILTO"))
 }
 
+// The two CLI paths get different budgets because they do different work: the
+// retraction check is a single lookup, the analytics runs are heavier. Both
+// were written inline at their call sites; naming them here is what lets
+// srvWriteTimeout below be derived from the longer of the two rather than
+// guessed.
+//
+// They do not stack. Each handler takes exactly one path, and the five
+// analytics handlers each call runCLIRaw once, so the longest legitimate
+// request is analyticsBudget, not the sum.
+const (
+	retractionCheckBudget = 10 * time.Second
+	analyticsBudget       = 60 * time.Second
+)
+
+// Server-side timeouts. ReadHeaderTimeout was the only one set, which left the
+// request BODY with no deadline at all: a size limit is not a time limit, and a
+// client that sends its body one byte per minute holds a handler goroutine for
+// as long as it likes. Caddy fronts this app in production and sets no request
+// timeout of its own, so this is the only place the limit exists.
+//
+// WriteTimeout is the one that must not be guessed. It covers the whole
+// response, and the longest request is allowed analyticsBudget to produce it,
+// so anything at or below that would cut off legitimate slow analyses rather
+// than attacks — and only the slowest ones, intermittently, which is far
+// harder to diagnose than the exposure being closed.
+const (
+	srvReadHeaderTimeout = 10 * time.Second
+	// The body is a small JSON object. Thirty seconds is far more than a real
+	// client needs and far less than a slow-loris attacker wants.
+	srvReadTimeout = 30 * time.Second
+	// The longest CLI budget plus room to write the response.
+	srvWriteTimeout = analyticsBudget + 30*time.Second
+	// Keep-alive connections that go quiet are released rather than held.
+	srvIdleTimeout = 120 * time.Second
+)
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleRoot)
@@ -121,7 +157,14 @@ func main() {
 	if crossrefMailto() != "" {
 		polite = "on"
 	}
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: srvReadHeaderTimeout,
+		ReadTimeout:       srvReadTimeout,
+		WriteTimeout:      srvWriteTimeout,
+		IdleTimeout:       srvIdleTimeout,
+	}
 	log.Printf("bibliovera-web listening on %s (CLI: %s, DB: %s, slots=%d, crossref_polite=%s)", addr, cliBinaryPath(), dbPath(), cliSem.capacity(), polite)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
@@ -431,7 +474,7 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	defer cliSem.release()
 
 	// 10-second timeout for retraction check (faster than CLI analytics).
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), retractionCheckBudget)
 	defer cancel()
 
 	// #nosec G204 -- fixed subcommand; doi/pmid are untrusted but passed safely.
@@ -568,7 +611,7 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 	}
 	defer cliSem.release()
 
-	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
+	ctx, cancel := context.WithTimeout(parent, analyticsBudget)
 	defer cancel()
 	// #nosec G204 -- fixed subcommand + whitelisted flags with values passed as
 	// discrete argv elements (no shell); ints are range-checked above.
