@@ -1070,7 +1070,7 @@ async function runAuth(){
   try{
     const data=await fetchJSON("/authors?"+p.toString());
     lastData.auth=data;
-    res.innerHTML=authTable(data,inst);
+    res.innerHTML=authTable(data,inst,p);
     updateQcount(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
@@ -1082,9 +1082,24 @@ function authorLink(r){
   }
   return name;
 }
-function authTable(rows,inst){
+// params is the URLSearchParams actually sent, not the form fields: those can
+// be edited after a run, and a meta line naming values the result was not
+// computed with is worse than none. Same reasoning as affTable above.
+//
+// journal was missing entirely here, not just minWorks: the line named the
+// institution and nothing else, so an author list for The Lancet and one for
+// all journals were indistinguishable once exported. limit stays out, as the
+// export header already states "showing N of M rows".
+function authTable(rows,inst,params){
   if(!Array.isArray(rows)||!rows.length) return '<p class="meta">No authors matched'+(inst?' for "'+esc(inst)+'"':'')+'.</p>';
-  let h=metaRow(rows.length+' authors'+(inst?' · '+esc(inst):''),'auth','bibliovera-authors.json');
+  const scope=[];
+  if(params){
+    scope.push(params.get('journal')||'all journals');
+    if(params.get('minWorks'))scope.push('min '+params.get('minWorks')+' works');
+  }
+  let h=metaRow(rows.length+' authors'+(inst?' · '+esc(inst):'')+
+    (scope.length?' · '+esc(scope.join(' · ')):''),
+    'auth','bibliovera-authors.json');
   h+='<table><thead><tr><th>#</th><th>Author</th><th style="text-align:right">Works</th><th style="text-align:right">Citations</th><th style="text-align:right">Avg</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+authorLink(r)+'</td>'+
     '<td class="n">'+num(r.works)+'</td><td class="n">'+num(r.total_citations)+'</td>'+
