@@ -1,3 +1,10 @@
+# data.db was tracked with Git LFS until commit 8315804 ("chore: stop tracking
+# data.db"); it is now in .gitignore and no longer in the tree. The rule is kept
+# as a record rather than deleted: it explains why a clone of this repository
+# once pulled gigabytes of LFS objects that no current commit references.
+# Measured 2026-09-20: `git lfs ls-files` returns nothing, and `git lfs prune`
+# freed 2.6 GB of orphaned local cache. If data.db is ever tracked again, this
+# line is already correct.
 data.db filter=lfs diff=lfs merge=lfs -text
 
 # This module's Go sources are LF in the index and must be LF in the worktree
@@ -7,3 +14,30 @@ data.db filter=lfs diff=lfs merge=lfs -text
 # and CI on Linux passed green — a false positive that costs a diagnosis every
 # time it fires. eol=lf overrides core.autocrlf=true, which put the CRLF there.
 *.go text eol=lf
+
+# Both vendored CLIs are tracked with Git LFS. git cannot delta-compress a
+# ~20 MB binary between versions, so every vendoring added another full copy to
+# the history permanently. Measured on 2026-09-20: 12 blobs of
+# thelancet-pp-cli-linux and 8 of retraction-checker-pp-cli-linux, packed
+# repository at 62 MiB after gc.
+#
+# LFS stores a ~130 byte pointer in the commit and keeps the binary outside the
+# object database, so a clone fetches the current versions instead of all twenty.
+#
+# -text is explicit rather than left to content sniffing: neither file has an
+# extension, and a single converted byte would corrupt the ELF silently.
+#
+# retraction-checker-pp-cli-linux is also vendored into pubvera-retractis, and
+# the two copies are NOT the same build: measured 2026-09-20, this one's sha256
+# begins 7ffb894a33d3 while retractis has 9fa7043fc402. Neither LFS nor gc can
+# deduplicate across repositories, and keeping the two in step is a separate
+# open question, not something this rule addresses.
+#
+# This stops future growth only. The twenty blobs already in the history stay
+# where they are: removing them means rewriting history, which invalidates every
+# existing clone and every commit hash. That is a separate decision.
+#
+# Anyone checking out this repository needs git-lfs installed. CI already checks
+# out with lfs: true.
+bin/thelancet-pp-cli-linux filter=lfs diff=lfs merge=lfs -text
+bin/retraction-checker-pp-cli-linux filter=lfs diff=lfs merge=lfs -text
