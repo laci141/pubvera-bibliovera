@@ -1006,14 +1006,27 @@ async function runAff(){
   try{
     const data=await fetchJSON("/affiliations?"+p.toString());
     lastData.aff=data;
-    res.innerHTML=affTable(data,j);
+    res.innerHTML=affTable(data,j,p);
     updateQcount(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
-function affTable(rows,journal){
+// params is the URLSearchParams actually sent, not the sliders: those can be
+// moved after a run, and a meta line naming values the result was not computed
+// with is worse than none. limit is deliberately left out - the export header
+// already states "showing N of M rows", and years/threshold/minPrior are the
+// three that decide which institutions reach the table at all. Without them two
+// exports taken at different window sizes are indistinguishable.
+function affTable(rows,journal,params){
   if(!Array.isArray(rows)||!rows.length) return '<p class="meta">No institutions matched.</p>';
   const maxRecent=Math.max(1,...rows.map(r=>Number(r.recent_count)||0));
-  let h=metaRow(rows.length+' institutions'+(journal?' · '+esc(journal):' · all journals'),
+  const scope=[];
+  if(params){
+    if(params.get('years'))scope.push(params.get('years')+'y window');
+    if(params.get('threshold'))scope.push('min '+params.get('threshold')+' recent');
+    if(params.get('minPrior'))scope.push('low base <'+params.get('minPrior'));
+  }
+  let h=metaRow(rows.length+' institutions'+(journal?' · '+esc(journal):' · all journals')+
+    (scope.length?' · '+esc(scope.join(' · ')):''),
     'aff','bibliovera-affiliations.json');
   h+='<table><thead><tr><th>#</th><th>Institution</th><th style="text-align:right">Recent</th><th style="text-align:right">Prior</th><th>Growth</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{
