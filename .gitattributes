@@ -28,10 +28,19 @@ data.db filter=lfs diff=lfs merge=lfs -text
 # extension, and a single converted byte would corrupt the ELF silently.
 #
 # retraction-checker-pp-cli-linux is also vendored into pubvera-retractis, and
-# the two copies are NOT the same build: measured 2026-09-20, this one's sha256
-# begins 7ffb894a33d3 while retractis has 9fa7043fc402. Neither LFS nor gc can
-# deduplicate across repositories, and keeping the two in step is a separate
-# open question, not something this rule addresses.
+# neither LFS nor gc can deduplicate across repositories. Do NOT compare the two
+# copies by sha256: a differing hash does not mean differing code. The build is
+# -trimpath deterministic, but the Go BuildID's FIRST segment is an action ID
+# that takes the build directory into account, and this repo compiles in
+# cli-src-retraction while retractis uses its own. Compare the THIRD BuildID
+# segment instead — that one identifies the compiled code — together with the
+# byte size and the Go version:
+#   file bin/retraction-checker-pp-cli-linux
+# An earlier version of this comment quoted the two sha256 prefixes and called
+# the copies different builds. That was true at the time for a different reason
+# (this copy predated upstream #1978) and became misleading the moment it was
+# revendored, which is why the numbers are gone and the method is here instead.
+# Keeping the two in step remains a separate open question.
 #
 # This stops future growth only. The twenty blobs already in the history stay
 # where they are: removing them means rewriting history, which invalidates every
