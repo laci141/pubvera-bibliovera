@@ -401,6 +401,13 @@ func handleCurate(w http.ResponseWriter, r *http.Request) {
 	writeRaw(w, raw)
 }
 
+// maxMeshPairs is the ceiling /mesh offers for limit. Measured against
+// the CLI on 2026-09-22: `thelancet mesh --org Oxford --limit 500`
+// returns 500 pairs in ~50 KB, and the page draws them as a force
+// graph, so 500 is what the UI can actually ask for. The CLI has no
+// ceiling of its own — this constant is the only one.
+const maxMeshPairs = 500
+
 // handleMesh mirrors GET /mesh?org=&limit=.
 // Returns co-authorship pairs within an institution ranked by shared works.
 // Each row is {author_a, author_b, shared_works}; the client builds a graph
@@ -413,7 +420,7 @@ func handleMesh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, err := optInt(q.Get("limit"), 25, 1, 100)
+	limit, err := optInt(q.Get("limit"), 25, 1, maxMeshPairs)
 	if err != nil {
 		writeErr(w, err)
 		return
