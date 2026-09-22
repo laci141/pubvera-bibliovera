@@ -133,6 +133,9 @@
     backdrop-filter:blur(15px);
     -webkit-backdrop-filter:blur(15px);
     animation:slide .3s ease;border-top:4px solid var(--c)}
+  /* The network needs more room than a table does, so the mesh modal alone is
+     40% wider than the shared 1600px; 96vw keeps it inside the viewport. */
+  #meshModal .mc{width:2240px;max-width:96vw}
   .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
   .mh h2{font-size:1.4rem;color:var(--c)}
   .x{background:none;border:none;color:#999;font-size:1.9rem;cursor:pointer;line-height:1}.x:hover{color:#fff}
@@ -240,19 +243,51 @@
   .graph-wrap{position:relative;width:100%;height:85vh;min-height:520px;max-height:1100px;
     border-radius:14px;overflow:hidden;
     background:radial-gradient(circle at 50% 40%,rgba(255,255,255,.04),transparent 70%);
-    border:1px solid rgba(255,255,255,.08);margin-top:.4rem;cursor:grab}
+    border:1px solid rgba(255,255,255,.08);margin-top:.4rem;
+    /* A system cursor cannot be recoloured, so the only way to tint it is a
+       custom SVG cursor: the same small hand in grey over the background and
+       in white while a node is within picking range. The keywords after the
+       url() are the fallback if a browser refuses the data URI. */
+    cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Cpath d='M8 11V4a1.5 1.5 0 0 1 3 0v6m0-2a1.5 1.5 0 0 1 3 0v2m0-1a1.5 1.5 0 0 1 3 0v4c0 4-2 6-5 6h-1c-3 0-4-1-5-3l-2-4a1.5 1.5 0 0 1 2.6-1.5L8 12' fill='%239aa3b5' stroke='%2305070f' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E") 8 4, grab}
   .graph-wrap:active{cursor:grabbing}
+  .graph-wrap.near{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Cpath d='M8 11V4a1.5 1.5 0 0 1 3 0v6m0-2a1.5 1.5 0 0 1 3 0v2m0-1a1.5 1.5 0 0 1 3 0v4c0 4-2 6-5 6h-1c-3 0-4-1-5-3l-2-4a1.5 1.5 0 0 1 2.6-1.5L8 12' fill='%23ffffff' stroke='%2305070f' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E") 8 4, pointer}
   .graph-wrap svg{width:100%;height:100%;display:block}
-  .glink{stroke:rgba(255,255,255,.22);stroke-linecap:round}
-  .gnode{cursor:grab;stroke:#0b1020;stroke-width:2px}
-  .glabel{font-size:22px;font-weight:800;fill:#ffffff;pointer-events:none;paint-order:stroke;
-    stroke:#05070f;stroke-width:6px;stroke-linejoin:round;letter-spacing:.2px}
+  .glink{stroke:rgba(255,255,255,.22);stroke-linecap:round;transition:stroke-opacity .2s}
+  .gnode{cursor:inherit;stroke:#0b1020;stroke-width:2px}
+  .glabel{font-weight:800;fill:#ffffff;pointer-events:none;paint-order:stroke;
+    stroke:#05070f;stroke-linejoin:round;letter-spacing:.2px}
   .gtip{position:fixed;pointer-events:none;background:rgba(15,17,34,.96);border:1px solid rgba(255,255,255,.25);
     border-radius:8px;padding:7px 12px;font-size:.82rem;color:#e8eef7;opacity:0;transition:opacity .15s;
     white-space:nowrap;z-index:2000}
-  .zoom-hint{position:absolute;top:10px;right:14px;background:rgba(15,17,34,.85);
-    border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:4px 14px;
-    font-size:.72rem;color:#aab;z-index:4;pointer-events:none}
+  /* Tier legend under the graph: the same four node colours, no new ones, and
+     the small-text size the notes under a chart already use. */
+  .glegend{display:flex;flex-wrap:wrap;gap:.25rem 1.375rem;font-size:.975rem;
+    color:rgba(255,255,255,.5);margin-top:.55rem;line-height:1.5}
+  .glegend span{display:inline-flex;align-items:center;gap:.5rem}
+  .glegend i{width:14px;height:14px;border-radius:50%;display:inline-block;flex:none}
+  /* Pinned-author panel: the same translucent white wash and hairline border
+     the graph frame already uses, and the small-text sizes from the notes. */
+  .gneigh{display:none;margin-top:.6rem;padding:.7rem .9rem;border-radius:12px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+  .gneigh h4{margin:0 0 .45rem;font-size:1.075rem;color:#e8eef7;font-weight:800}
+  .gneigh ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;
+    gap:.3rem 1.5rem;max-height:238px;overflow-y:auto}
+  .gneigh li{display:inline-flex;align-items:center;gap:.5rem;font-size:.975rem;
+    color:rgba(255,255,255,.5);line-height:1.5}
+  .gneigh i{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
+  .gneigh button{background:none;border:none;padding:0;font:inherit;cursor:pointer;
+    color:#e8eef7;font-weight:700}
+  .gneigh button:hover{text-decoration:underline}
+  .zoom-hint{background:rgba(15,17,34,.85);margin-top:.55rem;text-align:center;
+    border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:6px 14px;
+    font-size:.9rem;color:#aab;line-height:1.8}
+  .zoom-hint>span{display:block}
+  .zoom-hint b{color:#e8eef7;font-weight:800}
+  .zoom-hint button{display:none;margin-left:.6rem;background:none;
+    border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:0 9px;
+    font:inherit;color:#e8eef7;font-weight:700;cursor:pointer}
+  .zoom-hint.pinned button{display:inline-block}
+  .zoom-hint button:hover{border-color:rgba(255,255,255,.35)}
 
   .note{font-size:.78rem;color:rgba(255,255,255,.5);margin-top:1.1rem;line-height:1.5;white-space:normal}
 
@@ -273,7 +308,6 @@
     .drift-row{grid-template-columns:1fr 30px 1fr;gap:6px}
     .drift-topic{font-size:.78rem;max-width:120px}
     .graph-wrap{height:70vh;min-height:440px}
-    .glabel{font-size:17px;stroke-width:5px}
     /* Same content as desktop, one step smaller. The bar never changes what it
        says, only how large it says it: a bar that shows the brand on a laptop
        and hides it on a phone is two different marks, not one. */
@@ -520,7 +554,7 @@
   <label>Institution</label>
   <input type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
   <label>Max co-authorship pairs · <span class="val" id="mesh_lim_v">40</span></label>
-  <input type="range" id="mesh_lim" min="10" max="80" value="40" oninput="mesh_lim_v.textContent=this.value">
+  <input type="range" id="mesh_lim" min="10" max="500" step="10" value="40" oninput="mesh_lim_v.textContent=this.value">
   <button class="btn" onclick="runMesh()">Map Network</button>
   <div class="results" id="mesh_res"></div>
 </div></div>
@@ -1253,7 +1287,8 @@ function riseTable(items,topic,journal,minYear){
 
 // ── Collaboration network (D3 force-directed, zoom+pan) ─────────────────────
 let meshSim=null;  // running D3 simulation, so we can stop it on close
-function stopMeshSim(){ if(meshSim){meshSim.stop();meshSim=null;} }
+let meshCleanup=null;
+function stopMeshSim(){ if(meshSim){meshSim.stop();meshSim=null;} if(meshCleanup){meshCleanup();meshCleanup=null;} }
 
 async function runMesh(){
   save();
@@ -1268,14 +1303,58 @@ async function runMesh(){
     const pairs=Array.isArray(data)?data:[];
     lastData.mesh=pairs;
     if(!pairs.length){res.innerHTML='<p class="meta">No co-authorship pairs found for "'+esc(org)+'". Try a broader institution name.</p>';return;}
-    res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+esc(org),'mesh','bibliovera-collaboration.json')+
-      '<div class="graph-wrap" id="graphWrap"><div class="zoom-hint">🖱️ scroll = zoom · drag = pan · double-click = reset</div></div>'+
-      '<p class="note">Each dot is a researcher; each line is shared Lancet papers between two co-authors (thicker = more shared works). Scroll to zoom in on a cluster — labels grow with zoom. Drag empty space to pan, drag a node to move it, double-click to reset the view.</p>';
+    const authorCount=new Set(pairs.flatMap(p=>[p.author_a,p.author_b])).size;
+    res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json')+
+      '<div class="graph-wrap" id="graphWrap"></div>'+
+      '<div class="zoom-hint" id="zoomHint">'+
+        '<span><b>Click</b> a researcher to pin · <b>Esc</b> or click empty space to clear · <b>Scroll</b> to zoom</span>'+
+        '<span><b>Drag</b> the background to pan · <b>Drag</b> a dot to move it · <b>Double-click</b> to reset'+
+        '<button type="button" id="hintClear">✕ Clear (Esc)</button></span>'+
+      '</div>'+
+      '<div class="glegend">'+[1,2,3,0].map(t=>'<span><i style="background:'+MESH_TIER_COLORS[t]+'"></i>'+MESH_TIER_NAMES[t]+'</span>').join('')+'</div>'+
+      '<div class="gneigh" id="gNeigh"></div>'+
+      '<p class="note">Each dot is a researcher; each line is shared Lancet papers between two co-authors (thicker = more shared works). Size and colour show how many co-authors an author has — see the legend above. The layout is fixed: nothing moves on its own, and a dot you move stays where you drop it. The controls are listed just under the graph.</p>';
     drawMeshGraph(pairs);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 
+// Four fixed tier colours (Okabe-Ito, colour-blind safe), indexed by tier.
+// On the dark background brighter reads as more important, so tier 1 is the
+// brightest and tier 0 the dimmest.
+const MESH_TIER_COLORS=["#5A6782","#F0E442","#E69F00","#56B4E9"];
+const MESH_TIER_NAMES=["Others","Top 5% by co-authors","Next 15%","Next 30%"];
+// Radius multipliers by tier. The last step is +12% rather than +5% because
+// readers judge a circle by its diameter and so underestimate its area
+// (Flannery): a 5% step would not be visible at all.
+const MESH_TIER_SCALE=[1,1.40,1.20,1.12];
+
+// One importance tier per author, taken from the degree (the number of
+// distinct co-authors in the drawn pairs). Percentiles rather than absolute
+// degrees, so the same 5/15/30 shape holds whether the graph has 40 nodes or
+// 900. A tier comes from comparing a degree against a threshold value, never
+// from the node's position in the sorted array, so equal degrees always land
+// in the same tier. A node at the graph's minimum degree is always tier 0:
+// where everyone has the same degree nobody is a hub, and highlighting all of
+// them would say nothing.
+function meshTiers(degrees){
+  const n=degrees.length;
+  if(!n) return [];
+  const sorted=[...degrees].sort((a,b)=>b-a);
+  const at=p=>sorted[Math.min(n-1,Math.max(0,Math.ceil(p*n)-1))];
+  const t1=at(0.05), t2=at(0.20), t3=at(0.50), minDeg=sorted[n-1];
+  return degrees.map(d=>{
+    if(d<=minDeg) return 0;
+    if(d>=t1) return 1;
+    if(d>=t2) return 2;
+    if(d>=t3) return 3;
+    return 0;
+  });
+}
+
 function drawMeshGraph(pairs){
+  // Tuned for the 500-pair limit (measured: Oxford at limit=500 -> 500 pairs).
+  // The old constants (charge -560, link distance 85-130, fixed 22px labels,
+  // no pre-tick) were tuned for <=80 pairs and turn into a hairball above that.
   // Build nodes + links from {author_a, author_b, shared_works} pairs.
   const nodeMap=new Map();
   function nodeId(name){
@@ -1292,19 +1371,58 @@ function drawMeshGraph(pairs){
 
   const wrap=$("#graphWrap");
   const W=wrap.clientWidth||900, H=wrap.clientHeight||700;
+  const n=nodes.length;
   const maxW=Math.max(...links.map(l=>l.weight),1);
-  const maxStr=Math.max(...nodes.map(n=>n.strength),1);
-  const color=d3.scaleOrdinal(d3.quantize(d3.interpolateRainbow,Math.max(3,Math.min(nodes.length,20))));
+  // One tier per author drives all three channels at once: radius, colour and
+  // whether the label survives at low zoom.
+  meshTiers(nodes.map(n2=>n2.deg)).forEach((t,i)=>{nodes[i].tier=t;});
+
+  // Label size follows density: 22px while the graph is small, 11px from 160
+  // nodes up, linear in between — at 500 pairs fixed 22px labels overlap into
+  // an unreadable block.
+  const labelPx=Math.max(11,Math.min(22,22-(n-20)*(11/140)));
+  // Label size is an absolute on-screen size per tier, not a density curve:
+  // the density curve plus the zoom divide left names at ~8px. Raised 30% on
+  // the user's read of the live graph (16/14/13 -> 21/18/17). labelPx survives
+  // only because collide still measures label width with it.
+  const labelSize=[17,21,18,17];
+  const labelHalo=t=>labelSize[t]*(6/22);
+  // Size is the tier and nothing else: link strength no longer touches it.
+  const rBase=9;
+  const radius=n2=>rBase*MESH_TIER_SCALE[n2.tier];
 
   const svg=d3.select(wrap).append("svg").attr("viewBox",[0,0,W,H]);
   const tip=$("#gtip");
 
+  // The svg fills its wrapper but keeps a W-wide viewBox, so the browser
+  // applies a scale of its own, s = renderedWidth / W, on top of the zoom k.
+  // Only k used to be compensated, which is why a "12px" label came out at
+  // ~7px on screen. Every on-screen size below therefore divides by k*s
+  // (radii by sqrt(k)*s), cancelling both scales at once. s changes when the
+  // window is resized, so it is measured again there.
+  let viewS=1;
+  function measureViewScale(){
+    const rw=svg.node().getBoundingClientRect().width;
+    viewS=rw>0?rw/W:1;
+  }
+  measureViewScale();
+  function onMeshResize(){ measureViewScale(); applyZoomScale(zoomK); }
+  window.addEventListener("resize",onMeshResize);
+
   // Zoom container: every element goes into this <g>, and the zoom transforms it.
   const zoomG=svg.append("g");
 
+  // 0.1 at the low end: the fit-to-view below can ask for less than 0.2 at 500
+  // pairs, and the whole network has to fit on screen.
   const zoom=d3.zoom()
-    .scaleExtent([0.4,8])
-    .on("zoom",e=>zoomG.attr("transform",e.transform));
+    .scaleExtent([0.1,8])
+    // With a node in range the gesture belongs to the node drag, so the zoom
+    // declines the mousedown and lets it fall through; with none, the same
+    // press pans the background as before.
+    .filter(e=>e.type==="mousedown"||e.type==="touchstart"
+      ?(!e.button&&!candidate)
+      :(!e.ctrlKey&&!e.button))
+    .on("zoom",e=>{zoomG.attr("transform",e.transform);applyZoomScale(e.transform.k);applyLabelVis(e.transform.k);});
   svg.call(zoom).on("dblclick.zoom",null);
   svg.on("dblclick",()=>svg.transition().duration(450).call(zoom.transform,d3.zoomIdentity));
 
@@ -1314,40 +1432,257 @@ function drawMeshGraph(pairs){
 
   const node=zoomG.append("g").selectAll("circle").data(nodes).join("circle")
     .attr("class","gnode")
-    .attr("r",n=>7+(n.strength/maxStr)*20)
-    .attr("fill",(n,i)=>color(i%20))
-    .call(d3.drag()
-      .on("start",(e,d)=>{if(!e.active)meshSim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;})
-      .on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;})
-      .on("end",(e,d)=>{if(!e.active)meshSim.alphaTarget(0);d.fx=null;d.fy=null;}));
+    .attr("r",radius)
+    .attr("fill",n2=>MESH_TIER_COLORS[n2.tier]);
 
-  node.on("mousemove",(e,d)=>{
-      tip.style.opacity=1;
-      tip.style.left=(e.clientX+14)+"px";
-      tip.style.top=(e.clientY+14)+"px";
-      tip.innerHTML="<b>"+esc(d.id)+"</b><br>"+d.deg+" co-author"+(d.deg===1?"":"s")+" · "+d.strength+" shared works";
-    })
-    .on("mouseleave",()=>{tip.style.opacity=0;});
+  // Proximity picking. A dot is only 9-13 px across, and a target that small
+  // has to be hit exactly, which is slow and error-prone (Fitts's law). So the
+  // pointer never has to land on a circle: one nearest-node search within 20
+  // SCREEN px produces a "candidate", and hover, click, pin and drag all use
+  // it. 20 screen px is 20 / (k * s) in graph units, because the zoom k and
+  // the viewBox scale s both sit between graph units and the display.
+  // meshSim.find() is the search used: stop() only halts the timer, the
+  // simulation object and its nodes survive it, so its quadtree beats a manual
+  // scan over ~282 nodes. The loop is kept as a fallback for the window in
+  // which stopMeshSim() has already nulled meshSim.
+  const PICK_PX=20;
+  let candidate=null;
+  function pickAt(ev){
+    const t=d3.zoomTransform(svg.node());
+    const pt=d3.pointer(ev,svg.node());
+    const g=t.invert(pt);
+    const r=PICK_PX/(t.k*viewS);
+    if(meshSim&&typeof meshSim.find==="function") return meshSim.find(g[0],g[1],r)||null;
+    let best=null,bd=r*r;
+    for(const d of nodes){
+      const dx=d.x-g[0], dy=d.y-g[1], q=dx*dx+dy*dy;
+      if(q<bd){bd=q;best=d;}
+    }
+    return best;
+  }
+  function setCandidate(d){
+    if(candidate===d) return;
+    candidate=d;
+    wrap.classList.toggle("near",!!candidate);
+    applyNodeStyle();
+    if(pinnedId) return;
+    clearTimeout(hoverTimer); clearTimeout(leaveTimer);
+    if(candidate){ const id=candidate.id; hoverTimer=setTimeout(()=>applyFocus(id),200); }
+    else leaveTimer=setTimeout(()=>applyFocus(null),1000);
+  }
+  function showTip(ev){
+    const d=candidate;
+    if(!d){ tip.style.opacity=0; return; }
+    tip.style.opacity=1;
+    tip.style.left=(ev.clientX+14)+"px";
+    tip.style.top=(ev.clientY+14)+"px";
+    tip.innerHTML="<b>"+esc(d.id)+"</b><br>"+d.deg+" co-author"+(d.deg===1?"":"s")+" · "+d.strength+" shared works<br>"+MESH_TIER_NAMES[d.tier];
+  }
+  svg.on("pointermove.pick",ev=>{ setCandidate(pickAt(ev)); showTip(ev); })
+     .on("pointerleave.pick",()=>{ setCandidate(null); tip.style.opacity=0; });
 
   // Shortened label: max 16 characters — the full name is in the hover tooltip.
   const label=zoomG.append("g").selectAll("text").data(nodes).join("text")
     .attr("class","glabel").attr("dx",16).attr("dy",7)
-    .text(n=>n.id.length>16?n.id.slice(0,14)+"…":n.id);
+    .style("font-size",d=>labelSize[d.tier]+"px")
+    .style("stroke-width",d=>labelHalo(d.tier)+"px")
+    .text(n2=>n2.id.length>16?n2.id.slice(0,14)+"…":n2.id);
+
+  // Zoomed out, only the two top tiers keep a label; zooming past 1.5 brings
+  // every name back. A hover overrides the zoom for the hovered node and its
+  // neighbours, so a cluster can be read without zooming into it.
+  let zoomK=1, forcedLabels=null;
+  let pinnedId=null, hoverTimer=null, leaveTimer=null;
+  let dragFrom=[0,0], dragMoved=false, svgFrom=null;
+  function applyLabelVis(k){
+    if(k!==undefined) zoomK=k;
+    label.style("display",d=>(zoomK>=1.5||d.tier===1||d.tier===2||
+      (forcedLabels&&forcedLabels.has(d.id)))?null:"none");
+  }
+
+  // Labels and nodes sit inside the zoomed <g>, so the transform shrinks them
+  // with the layout: at the fit-to-view k of ~0.4 a 13px name renders as ~5px.
+  // Text (size, halo, dx/dy) is divided by k*s, which cancels the zoom and the
+  // viewBox scale exactly and holds a true on-screen size; radii are divided by
+  // sqrt(k)*s instead, a gentler correction on the zoom that keeps nodes
+  // visible zoomed out without letting them balloon zoomed in. Collide still
+  // uses the unscaled radius, because the layout is computed once in graph
+  // units.
+  // The candidate and the pinned node wear a white ring and grow by a quarter,
+  // so the thing the next click will act on is visible before the click. The
+  // ring is 2 px on screen, divided by k*s like every other on-screen size.
+  function isRinged(d){ return d===candidate||(pinnedId&&d.id===pinnedId); }
+  function applyNodeStyle(){
+    const ks=zoomK*viewS, rs=Math.sqrt(zoomK)*viewS;
+    if(!(ks>0)||!(rs>0)) return;
+    node.attr("r",d=>radius(d)/rs*(isRinged(d)?1.25:1))
+      .style("stroke",d=>isRinged(d)?"#ffffff":null)
+      .style("stroke-width",d=>isRinged(d)?(2/ks)+"px":null);
+  }
+  function applyZoomScale(k){
+    if(k) zoomK=k;
+    const ks=zoomK*viewS, rs=Math.sqrt(zoomK)*viewS;
+    if(!(ks>0)||!(rs>0)) return;
+    applyNodeStyle();
+    label.attr("dx",16/ks).attr("dy",7/ks)
+      .style("font-size",d=>(labelSize[d.tier]/ks)+"px")
+      .style("stroke-width",d=>(labelHalo(d.tier)/ks)+"px");
+  }
 
   // Layout: a weak x/y force pulls even the lonely pairs towards the centre,
   // so they do not scatter into the corners — the space is used better.
+  // distanceMax keeps the repulsion local, so clusters can actually separate
+  // instead of every node pushing every other one.
+  const baseLen=Math.min(280,Math.max(120,Math.sqrt((W*H)/Math.max(n,4))*1.7));
   meshSim=d3.forceSimulation(nodes)
-    .force("link",d3.forceLink(links).id(d=>d.id).distance(l=>130-(l.weight/maxW)*45).strength(.55))
-    .force("charge",d3.forceManyBody().strength(-560))
-    .force("x",d3.forceX(W/2).strength(.07))
-    .force("y",d3.forceY(H/2).strength(.09))
-    .force("collide",d3.forceCollide().radius(n=>20+(n.strength/maxStr)*20))
-    .on("tick",()=>{
-      link.attr("x1",l=>l.source.x).attr("y1",l=>l.source.y)
-          .attr("x2",l=>l.target.x).attr("y2",l=>l.target.y);
-      node.attr("cx",d=>d.x).attr("cy",d=>d.y);
-      label.attr("x",d=>d.x).attr("y",d=>d.y);
-    });
+    .force("link",d3.forceLink(links).id(d=>d.id)
+      .distance(l=>baseLen+60*(1-l.weight/maxW))
+      .strength(l=>0.06+0.22*(l.weight/maxW)))
+    .force("charge",d3.forceManyBody().strength(-(300+n*12)).distanceMax(600))
+    .force("x",d3.forceX(W/2).strength(.025))
+    .force("y",d3.forceY(H/2).strength(.03))
+    .force("collide",d3.forceCollide()
+      .radius(d=>radius(d)+8+Math.min(d.id.length,16)*labelPx*0.55/2));
+
+  function render(){
+    link.attr("x1",l=>l.source.x).attr("y1",l=>l.source.y)
+        .attr("x2",l=>l.target.x).attr("y2",l=>l.target.y);
+    node.attr("cx",d=>d.x).attr("cy",d=>d.y);
+    label.attr("x",d=>d.x).attr("y",d=>d.y);
+  }
+
+  // Redraw one node in place: its circle, its label and the links it touches.
+  // Dragging uses this, so moving a node costs three small updates instead of
+  // a whole-graph re-render.
+  function renderNode(d){
+    node.filter(o=>o===d).attr("cx",d.x).attr("cy",d.y);
+    label.filter(o=>o===d).attr("x",d.x).attr("y",d.y);
+    link.filter(l=>l.source===d||l.target===d)
+      .attr("x1",l=>l.source.x).attr("y1",l=>l.source.y)
+      .attr("x2",l=>l.target.x).attr("y2",l=>l.target.y);
+  }
+
+  // Pre-tick: settle the layout off-screen, so the first paint is the finished
+  // graph instead of an exploding hairball.
+  meshSim.stop();
+  let guard=0;
+  while(meshSim.alpha()>meshSim.alphaMin() && guard++<2000) meshSim.tick();
+  render();
+
+  // Still graph from here on: the simulation is never ticked again. The old
+  // drag handler reheated the layout on the drag "start" event, and d3.drag
+  // fires "start" on mousedown even without movement, so every plain click on
+  // a node set all ~282 nodes moving, and on release the fixed position was
+  // released too, letting the node drift back while the motion decayed for
+  // seconds. That is the reported jumping. A click is now a focus gesture, a
+  // drag moves that one node and leaves it where it is dropped, and nothing
+  // else ever moves.
+  meshSim.stop();
+
+  // Fit-to-view: the settled bounding box, 60px of padding, scaled to fit.
+  const pad=60;
+  const x0=Math.min(...nodes.map(d=>d.x))-pad, x1=Math.max(...nodes.map(d=>d.x))+pad;
+  const y0=Math.min(...nodes.map(d=>d.y))-pad, y1=Math.max(...nodes.map(d=>d.y))+pad;
+  const bw=Math.max(x1-x0,1), bh=Math.max(y1-y0,1);
+  const k=Math.max(0.1,Math.min(1.2,0.9*Math.min(W/bw,H/bh)));
+  const tx=W/2-k*(x0+x1)/2, ty=H/2-k*(y0+y1)/2;
+  svg.call(zoom.transform,d3.zoomIdentity.translate(tx,ty).scale(k));
+  applyZoomScale(k);
+
+  // Hover focus: built from the RESOLVED links, so source/target are the node
+  // objects the simulation produced, not the original id strings.
+  const neighbours=new Map(nodes.map(d=>[d.id,new Set([d.id])]));
+  links.forEach(l=>{
+    neighbours.get(l.source.id).add(l.target.id);
+    neighbours.get(l.target.id).add(l.source.id);
+  });
+  // Focus has one look and three inputs: a hover that waits 200 ms before it
+  // previews (so sweeping the pointer across a cluster does not strobe) and
+  // lingers 1000 ms after leaving; a click that pins it; Escape or a click on
+  // empty space that clears the pin. A pin outranks hover: while one is set
+  // the pointer changes nothing.
+  function applyFocus(id){
+    if(!id){
+      forcedLabels=null; applyLabelVis();
+      node.style("opacity",null);
+      label.style("opacity",null);
+      link.style("stroke-opacity",null);
+      return;
+    }
+    const near=neighbours.get(id);
+    forcedLabels=near; applyLabelVis();
+    node.style("opacity",o=>near.has(o.id)?1:.15);
+    label.style("opacity",o=>near.has(o.id)?1:.15);
+    link.style("stroke-opacity",l=>(l.source.id===id||l.target.id===id)?.9:.03);
+  }
+  // The hint bar doubles as the pin's exit: the button only exists while
+  // something is pinned, so the way out is where the way in was explained.
+  const hint=$("#zoomHint"), hintClear=$("#hintClear");
+  if(hintClear) hintClear.onclick=()=>clearPin();
+  function updateHint(){ if(hint) hint.classList.toggle("pinned",!!pinnedId); }
+  function pinFocus(id){
+    if(!neighbours.has(id)) return;
+    clearTimeout(hoverTimer); clearTimeout(leaveTimer);
+    pinnedId=id; applyFocus(id); renderNeighbours(); updateHint(); applyNodeStyle();
+  }
+  function clearPin(){
+    if(!pinnedId) return;
+    pinnedId=null; applyFocus(null); renderNeighbours(); updateHint(); applyNodeStyle();
+  }
+  // A click with no candidate clears the pin; a pan is not a click, so the
+  // same 4 px rule as the node drag decides.
+  svg.on("mousedown.pin",e=>{svgFrom=[e.clientX,e.clientY];});
+  svg.on("click.pin",e=>{
+    if(svgFrom&&Math.hypot(e.clientX-svgFrom[0],e.clientY-svgFrom[1])>4) return;
+    if(!candidate) clearPin();
+  });
+
+  // One drag on the svg, with the candidate as its subject. A null subject
+  // never starts a gesture, so the press falls through to the zoom and pans
+  // the background; a real subject moves that one node and nothing else, and a
+  // press that never moved 4 px is a click, which pins.
+  svg.call(d3.drag()
+    .container(()=>zoomG.node())
+    .subject(()=>candidate)
+    .on("start",e=>{const se=e.sourceEvent;dragFrom=[se.clientX,se.clientY];dragMoved=false;})
+    .on("drag",e=>{
+      const se=e.sourceEvent, d=e.subject;
+      if(Math.hypot(se.clientX-dragFrom[0],se.clientY-dragFrom[1])>4) dragMoved=true;
+      if(!dragMoved||!d) return;
+      d.x=e.x; d.y=e.y; renderNode(d);
+    })
+    .on("end",e=>{ if(!dragMoved&&e.subject) pinFocus(e.subject.id); }));
+  function onEscapeKey(e){ if(e.key==="Escape") clearPin(); }
+  document.addEventListener("keydown",onEscapeKey);
+  // Removed again by stopMeshSim(), which runs on redraw and on modal close,
+  // so repeated openings never stack up Escape or resize listeners.
+  meshCleanup=()=>{
+    document.removeEventListener("keydown",onEscapeKey);
+    window.removeEventListener("resize",onMeshResize);
+  };
+
+  // Neighbour list for the pinned author: who they publish with, most shared
+  // works first, each name a button that moves the pin there.
+  const neighWrap=$("#gNeigh");
+  function renderNeighbours(){
+    if(!neighWrap) return;
+    if(!pinnedId){ neighWrap.innerHTML=""; neighWrap.style.display="none"; return; }
+    const d=nodeMap.get(pinnedId);
+    const rows=links.filter(l=>l.source.id===pinnedId||l.target.id===pinnedId)
+      .map(l=>({o:l.source.id===pinnedId?l.target:l.source,w:l.weight}))
+      .sort((a,b)=>b.w-a.w||a.o.id.localeCompare(b.o.id));
+    neighWrap.style.display="block";
+    neighWrap.innerHTML='<h4>'+esc(d.id)+' \u00b7 '+d.deg+' co-author'+(d.deg===1?'':'s')+'</h4>'+
+      '<ul>'+rows.map(r=>'<li><i style="background:'+MESH_TIER_COLORS[r.o.tier]+'"></i>'+
+        '<button type="button" data-author="'+esc(r.o.id)+'">'+esc(r.o.id)+'</button>'+
+        ' \u2014 '+r.w+' shared work'+(r.w===1?'':'s')+'</li>').join('')+'</ul>';
+  }
+  if(neighWrap) neighWrap.onclick=e=>{
+    const b=e.target.closest("button[data-author]");
+    if(b) pinFocus(b.getAttribute("data-author"));
+  };
+  renderNeighbours();
+  updateHint();
 }
 
 // ── Shared retraction check ─────────────────────────────────────────────────
