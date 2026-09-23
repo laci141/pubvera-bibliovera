@@ -678,7 +678,16 @@ function domView(key){
 }
 
 registerView("aff",()=>domView("aff"));
-registerView("auth",()=>domView("auth"));
+// avg_citations arrives from the CLI as a raw float (3228.714285714286). The
+// table shows it through num(), i.e. at most one decimal, so the export rounds
+// it the same way: same Intl call, grouping off, so the two can never disagree
+// on a half-way value. Nothing is lost - total_citations and works ship in the
+// same row, and the exact mean is their quotient.
+const round1=n=>Number((Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:1,useGrouping:false}));
+registerView("auth",()=>{
+  const v=domView("auth");
+  return {rows:v.rows.map(r=>Object.assign({},r,{avg_citations:round1(r.avg_citations)})),filters:v.filters};
+});
 registerView("read",()=>domView("read"));
 registerView("rise",()=>domView("rise"));
 // drift + mesh render charts, not tables — the qfilter cannot narrow them,
