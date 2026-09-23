@@ -342,7 +342,7 @@ func handleDrift(w http.ResponseWriter, r *http.Request) {
 	w1 := strings.TrimSpace(q.Get("window1"))
 	w2 := strings.TrimSpace(q.Get("window2"))
 	if !validYearWindow(w1) || !validYearWindow(w2) {
-		writeErr(w, errors.New("window1 and window2 must be YYYY:YYYY (e.g. 2015:2019)"))
+		writeErr(w, badRequest("window1 and window2 must be YYYY:YYYY (e.g. 2015:2019)"))
 		return
 	}
 
@@ -374,7 +374,7 @@ func handleCurate(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	topic := strings.TrimSpace(q.Get("topic"))
 	if topic == "" {
-		writeErr(w, errors.New("topic parameter required"))
+		writeErr(w, badRequest("topic parameter required"))
 		return
 	}
 
@@ -416,7 +416,7 @@ func handleMesh(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	org := strings.TrimSpace(q.Get("org"))
 	if org == "" {
-		writeErr(w, errors.New("org parameter required"))
+		writeErr(w, badRequest("org parameter required"))
 		return
 	}
 
@@ -445,7 +445,7 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	pmid := strings.TrimSpace(q.Get("pmid"))
 
 	if doi == "" && pmid == "" {
-		writeErr(w, errors.New("doi or pmid parameter required"))
+		writeErr(w, badRequest("doi or pmid parameter required"))
 		return
 	}
 
@@ -552,10 +552,10 @@ func intFlag(raw, name string, min, max int) ([]string, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%s must be an integer", name)
+		return nil, badRequest("%s must be an integer", name)
 	}
 	if n < min || n > max {
-		return nil, fmt.Errorf("%s must be between %d and %d", name, min, max)
+		return nil, badRequest("%s must be between %d and %d", name, min, max)
 	}
 	return []string{"--" + name, strconv.Itoa(n)}, nil
 }
@@ -569,10 +569,10 @@ func optInt(raw string, def, min, max int) (int, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
-		return 0, errors.New("parameter must be an integer")
+		return 0, badRequest("parameter must be an integer")
 	}
 	if n < min || n > max {
-		return 0, fmt.Errorf("parameter must be between %d and %d", min, max)
+		return 0, badRequest("parameter must be between %d and %d", min, max)
 	}
 	return n, nil
 }
@@ -666,11 +666,34 @@ func writeJSONValue(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// badRequestError marks an error caused by the client's input.
+//
+// The HTTP status is decided by the error's type, not at each call site:
+// validation happens inside helpers (optInt, intFlag) whose errors pass
+// through the same writeErr as upstream failures, so a status chosen per
+// call site would have to be repeated at every one of them and could drift.
+// The helper that knows the input was bad marks it once, here.
+type badRequestError struct{ msg string }
+
+func (e badRequestError) Error() string { return e.msg }
+
+func badRequest(format string, a ...any) error {
+	return badRequestError{msg: fmt.Sprintf(format, a...)}
+}
+
+// writeErr reports err as JSON. 502 stays the default: anything not
+// explicitly marked as client input is treated as an upstream failure, so an
+// unclassified error can never be reported as the client's fault.
 func writeErr(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	var bre badRequestError
+	if errors.As(err, &bre) {
+		status = http.StatusBadRequest
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusBadGateway)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-} // watchtower-test 1784986681
+}
 
 // truncate caps a log line at max runes. Rune-based, not byte-based: a
 // stderr message can carry UTF-8, and slicing bytes would split a character
