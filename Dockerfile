@@ -33,7 +33,10 @@ COPY main.go semaphore.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/server .
 
 # ---- Stage 2: runtime -------------------------------------------------------
-FROM alpine:latest
+# Pinned to a minor release, not :latest. :latest moves on its own, so a
+# rebuild with no code change could ship a different base system. 3.24 is the
+# same line pubvera-grantvera and pubvera-recallis run.
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates wget
 WORKDIR /app
 COPY --from=web-builder /out/server ./server
@@ -45,6 +48,13 @@ ENV CLI_BIN=/app/thelancet
 ENV THELANCET_DB=/app/data.db
 ENV RETRACTION_CHECKER_BIN=/app/retraction-checker
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8080/healthz || exit 1
+
+# The probe picks its port by the same rule main.go uses to pick the listen
+# address: ADDR wins if set (its port is the part after the last ':'), then
+# PORT, then the built-in 8080. A probe with its own hard-coded number would
+# report a healthy server as down the moment the two disagreed.
+# Timings match the docker-compose.yml override this replaces (start period
+# 15s), so dropping that override changes nothing but where the rule lives.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD p="${PORT:-8080}"; [ -n "$ADDR" ] && p="${ADDR##*:}"; wget -qO- "http://localhost:$p/healthz" || exit 1
 CMD ["./server"]
