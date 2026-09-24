@@ -21,18 +21,39 @@
 # is the intended outcome: a stale copy baked into the image would answer with
 # months-old data and look healthy.
 #
-# Two CLI binaries ship in the runtime image:
+# Two CLI binaries ship in the runtime image, both built in the cli-builder
+# stage with go install from ONE pinned printing-press-library commit:
 #   - thelancet-pp-cli       (analytics: affiliations, authors, drift, curate)
 #   - retraction-checker-pp-cli (live retraction status over Crossref & OpenAlex)
+# They used to be PRE-BUILT binaries in bin/, made by vendor-cli.sh, and
+# nothing in the image said which upstream source they came from. The commit
+# is now stamped on the image as org.pubvera.cli.commit.
+#
+# PP_LIBRARY_COMMIT is declared before the first FROM so it is global. An ARG
+# declared after a FROM exists only in that stage; each stage that needs the
+# value re-declares it with a bare ARG and inherits this default. Declaring
+# the default inside the builder stage only left the label empty on
+# pubvera-recallis (measured 2026-09-24), and CI now fails on that.
+ARG PP_LIBRARY_COMMIT=58edea349ce3df8a301d4d8950119487c32604b8
 
-# ---- Stage 1: build the web wrapper for linux/amd64 -------------------------
+# ---- Stage 1: build both CLIs from upstream source -------------------------
+# Two RUN lines, not one: a single go install accepts packages from one module
+# only, and the two CLIs are separate modules.
+FROM golang:1.26-alpine AS cli-builder
+ARG PP_LIBRARY_COMMIT
+RUN CGO_ENABLED=0 go install -trimpath \
+    github.com/mvanhorn/printing-press-library/library/developer-tools/thelancet/cmd/thelancet-pp-cli@${PP_LIBRARY_COMMIT}
+RUN CGO_ENABLED=0 go install -trimpath \
+    github.com/mvanhorn/printing-press-library/library/other/retraction-checker/cmd/retraction-checker-pp-cli@${PP_LIBRARY_COMMIT}
+
+# ---- Stage 2: build the web wrapper for linux/amd64 -------------------------
 FROM golang:1.26-alpine AS web-builder
 WORKDIR /build
 COPY go.mod ./
 COPY main.go semaphore.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/server .
 
-# ---- Stage 2: runtime -------------------------------------------------------
+# ---- Stage 3: runtime -------------------------------------------------------
 # Pinned to a minor release, not :latest. :latest moves on its own, so a
 # rebuild with no code change could ship a different base system. 3.24 is the
 # same line pubvera-grantvera and pubvera-recallis run.
@@ -40,10 +61,15 @@ FROM alpine:3.24
 RUN apk add --no-cache ca-certificates wget
 WORKDIR /app
 COPY --from=web-builder /out/server ./server
-COPY bin/thelancet-pp-cli-linux ./thelancet
-COPY bin/retraction-checker-pp-cli-linux ./retraction-checker
+COPY --from=cli-builder /go/bin/thelancet-pp-cli ./thelancet
+COPY --from=cli-builder /go/bin/retraction-checker-pp-cli ./retraction-checker
 COPY index.html ./index.html
 RUN chmod +x ./thelancet ./retraction-checker ./server
+
+# The upstream commit both CLIs were built from, readable with docker inspect.
+ARG PP_LIBRARY_COMMIT
+LABEL org.pubvera.cli.commit=${PP_LIBRARY_COMMIT}
+
 ENV CLI_BIN=/app/thelancet
 ENV THELANCET_DB=/app/data.db
 ENV RETRACTION_CHECKER_BIN=/app/retraction-checker
