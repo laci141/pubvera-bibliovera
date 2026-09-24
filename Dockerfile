@@ -67,7 +67,6 @@ COPY index.html ./index.html
 RUN chmod +x ./thelancet ./retraction-checker ./server
 
 # The upstream commit both CLIs were built from, readable with docker inspect.
-ARG PP_LIBRARY_COMMIT
 LABEL org.pubvera.cli.commit=${PP_LIBRARY_COMMIT}
 
 ENV CLI_BIN=/app/thelancet
