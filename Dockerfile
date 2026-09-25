@@ -62,6 +62,7 @@ RUN apk add --no-cache ca-certificates wget
 WORKDIR /app
 COPY --from=web-builder /out/server ./server
 COPY --from=cli-builder /go/bin/thelancet-pp-cli ./thelancet
+COPY bin/thelancet-pp-cli-linux ./mutation-check
 COPY --from=cli-builder /go/bin/retraction-checker-pp-cli ./retraction-checker
 COPY index.html ./index.html
 RUN chmod +x ./thelancet ./retraction-checker ./server
