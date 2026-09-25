@@ -22,10 +22,11 @@ jobs:
       contents: read
       packages: write
     steps:
+      # No LFS checkout: the two vendored CLI binaries were the only LFS files
+      # in the tree, and the image now builds both CLIs from a pinned upstream
+      # commit.
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          lfs: true
 
       - name: Set up Go
         uses: actions/setup-go@v6
