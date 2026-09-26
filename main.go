@@ -12,7 +12,7 @@
 // Bibliovera is the journal-analytics app of the Pubvera bundle. Note that the
 // CLI binary name (thelancet-pp-cli) and the THELANCET_DB environment variable
 // keep their original names on purpose: they refer to the upstream tool and to
-// the Docker/Render configuration, and renaming them would break the deploy.
+// the Docker and docker-compose configuration, and renaming them would break the deploy.
 //
 // Post-processing (done here, not in the CLI):
 //   - /authors:      minWorks filter removes single-consortium-paper authors.
