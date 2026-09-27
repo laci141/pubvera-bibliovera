@@ -308,6 +308,11 @@
     .drift-row{grid-template-columns:1fr 30px 1fr;gap:6px}
     .drift-topic{font-size:.78rem;max-width:120px}
     .graph-wrap{height:70vh;min-height:440px}
+    /* Phones: the result header stacks - count, then the filter on a row of
+       its own, then the export buttons. Desktop keeps one row. */
+    .meta-row{flex-direction:column;align-items:stretch}
+    .dl-group{flex-wrap:wrap}
+    .dl-group .qfilter{flex:1 1 100%;width:auto}
     /* Same content as desktop, one step smaller. The bar never changes what it
        says, only how large it says it: a bar that shows the brand on a laptop
        and hides it on a phone is two different marks, not one. */
@@ -879,7 +884,7 @@ function downloadBibTeX(key,filename){
   URL.revokeObjectURL(url);
 }
 
-function metaRow(text,key,filename){
+function metaRow(text,key,filename,extra){
   const csvName=String(filename).replace(/\.json$/i,".csv");
   const xlsxName=String(filename).replace(/\.json$/i,".xlsx");
   const bibName=String(filename).replace(/\.json$/i,".bib");
@@ -892,6 +897,7 @@ function metaRow(text,key,filename){
   return '<div class="meta-row"><span class="meta">'+text+'<span class="qcount"></span></span>'+
     '<span class="dl-group">'+
     '<input class="qfilter" type="text" placeholder="🔍 Filter results…">'+
+    (extra||'')+
     bibBtn+
     '<button class="dl" onclick="downloadXLSX(\''+key+'\',\''+xlsxName+'\')">⬇ Excel</button>'+
     '<button class="dl" onclick="downloadCSV(\''+key+'\',\''+csvName+'\')">⬇ CSV</button>'+
@@ -1297,7 +1303,9 @@ function riseTable(items,topic,journal,minYear){
 // ── Collaboration network (D3 force-directed, zoom+pan) ─────────────────────
 let meshSim=null;  // running D3 simulation, so we can stop it on close
 let meshCleanup=null;
-function stopMeshSim(){ if(meshSim){meshSim.stop();meshSim=null;} if(meshCleanup){meshCleanup();meshCleanup=null;} }
+let meshPNG=null;  // set by drawMeshGraph: renders the current view to a PNG
+function stopMeshSim(){ if(meshSim){meshSim.stop();meshSim=null;} if(meshCleanup){meshCleanup();meshCleanup=null;} meshPNG=null; }
+function downloadMeshPNG(){ if(!meshPNG){alert("Map a network first.");return;} meshPNG(); }
 
 async function runMesh(){
   save();
@@ -1313,7 +1321,7 @@ async function runMesh(){
     lastData.mesh=pairs;
     if(!pairs.length){res.innerHTML='<p class="meta">No co-authorship pairs found for "'+esc(org)+'". Try a broader institution name.</p>';return;}
     const authorCount=new Set(pairs.flatMap(p=>[p.author_a,p.author_b])).size;
-    res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json')+
+    res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json','<button class="dl" title="The graph as shown, plus the co-author list when a researcher is pinned" onclick="downloadMeshPNG()">⬇ PNG</button>')+
       '<div class="graph-wrap" id="graphWrap"></div>'+
       '<div class="zoom-hint" id="zoomHint">'+
         '<span><b>Click</b> a researcher to pin · <b>Esc</b> or click empty space to clear · <b>Scroll</b> to zoom</span>'+
@@ -1392,9 +1400,10 @@ function drawMeshGraph(pairs){
   const labelPx=Math.max(11,Math.min(22,22-(n-20)*(11/140)));
   // Label size is an absolute on-screen size per tier, not a density curve:
   // the density curve plus the zoom divide left names at ~8px. Raised 30% on
-  // the user's read of the live graph (16/14/13 -> 21/18/17). labelPx survives
-  // only because collide still measures label width with it.
-  const labelSize=[17,21,18,17];
+  // the user's read of the live graph (16/14/13 -> 21/18/17), then 60% more
+  // on the same read (21/18/17 -> 34/29/27). labelPx survives only because
+  // collide still measures label width with it.
+  const labelSize=[27,34,29,27];
   const labelHalo=t=>labelSize[t]*(6/22);
   // Size is the tier and nothing else: link strength no longer touches it.
   const rBase=9;
@@ -1505,8 +1514,12 @@ function drawMeshGraph(pairs){
   let dragFrom=[0,0], dragMoved=false, svgFrom=null;
   function applyLabelVis(k){
     if(k!==undefined) zoomK=k;
-    label.style("display",d=>(zoomK>=1.5||d.tier===1||d.tier===2||
-      (forcedLabels&&forcedLabels.has(d.id)))?null:"none");
+    // While a researcher is focused (hover preview or pin) only they and
+    // their co-authors keep a name: the faded names of everyone else were
+    // noise behind the ones being read.
+    label.style("display",d=>forcedLabels
+      ?(forcedLabels.has(d.id)?null:"none")
+      :((zoomK>=1.5||d.tier===1||d.tier===2)?null:"none"));
   }
 
   // Labels and nodes sit inside the zoomed <g>, so the transform shrinks them
@@ -1673,13 +1686,19 @@ function drawMeshGraph(pairs){
   // Neighbour list for the pinned author: who they publish with, most shared
   // works first, each name a button that moves the pin there.
   const neighWrap=$("#gNeigh");
+  // The pinned author's co-authors, most shared works first. The list under
+  // the graph and the PNG export both read this, so they cannot disagree.
+  function pinnedRows(){
+    if(!pinnedId) return [];
+    return links.filter(l=>l.source.id===pinnedId||l.target.id===pinnedId)
+      .map(l=>({o:l.source.id===pinnedId?l.target:l.source,w:l.weight}))
+      .sort((a,b)=>b.w-a.w||a.o.id.localeCompare(b.o.id));
+  }
   function renderNeighbours(){
     if(!neighWrap) return;
     if(!pinnedId){ neighWrap.innerHTML=""; neighWrap.style.display="none"; return; }
     const d=nodeMap.get(pinnedId);
-    const rows=links.filter(l=>l.source.id===pinnedId||l.target.id===pinnedId)
-      .map(l=>({o:l.source.id===pinnedId?l.target:l.source,w:l.weight}))
-      .sort((a,b)=>b.w-a.w||a.o.id.localeCompare(b.o.id));
+    const rows=pinnedRows();
     neighWrap.style.display="block";
     neighWrap.innerHTML='<h4>'+esc(d.id)+' \u00b7 '+d.deg+' co-author'+(d.deg===1?'':'s')+'</h4>'+
       '<ul>'+rows.map(r=>'<li><i style="background:'+MESH_TIER_COLORS[r.o.tier]+'"></i>'+
@@ -1692,6 +1711,68 @@ function drawMeshGraph(pairs){
   };
   renderNeighbours();
   updateHint();
+  // PNG export of the graph exactly as it is on screen (zoom, pan, moved
+  // dots, focus), at 2x for print. The svg is styled by the stylesheet, which
+  // a serialised copy does not carry, so the computed styles that matter are
+  // copied inline first. With a researcher pinned, the co-author list is
+  // drawn under the graph, so one image holds both.
+  meshPNG=()=>{
+    const src=svg.node(), rect=src.getBoundingClientRect();
+    const w=Math.round(rect.width), h=Math.round(rect.height);
+    if(!(w>0&&h>0)) return;
+    const clone=src.cloneNode(true);
+    const props=["fill","fill-opacity","stroke","stroke-width","stroke-opacity","stroke-linecap",
+      "stroke-linejoin","paint-order","opacity","display","font-family","font-size","font-weight","letter-spacing"];
+    const from=src.querySelectorAll("*"), to=clone.querySelectorAll("*");
+    for(let i=0;i<from.length;i++){
+      const cs=getComputedStyle(from[i]);
+      to[i].setAttribute("style",props.map(q=>q+":"+cs.getPropertyValue(q)).join(";"));
+    }
+    clone.setAttribute("xmlns","http://www.w3.org/2000/svg");
+    clone.setAttribute("width",w); clone.setAttribute("height",h);
+    const rows=pinnedRows();
+    const S=2, pad=24, head=34, lineH=26, cols=3;
+    const listH=rows.length?pad+head+Math.ceil(rows.length/cols)*lineH+pad:0;
+    let bg="#0f1122";
+    for(let e=wrap;e;e=e.parentElement){
+      const c=getComputedStyle(e).backgroundColor;
+      if(c&&c!=="transparent"&&c!=="rgba(0, 0, 0, 0)"){bg=c;break;}
+    }
+    const cv=document.createElement("canvas");
+    cv.width=w*S; cv.height=(h+listH)*S;
+    const ctx=cv.getContext("2d"); ctx.scale(S,S);
+    ctx.fillStyle="#0f1122"; ctx.fillRect(0,0,w,h+listH);
+    ctx.fillStyle=bg; ctx.fillRect(0,0,w,h+listH);
+    const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)],{type:"image/svg+xml;charset=utf-8"}));
+    const img=new Image();
+    img.onload=()=>{
+      ctx.drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
+      if(rows.length){
+        const d=nodeMap.get(pinnedId), y0=h+pad, colW=(w-2*pad)/cols;
+        ctx.textBaseline="top"; ctx.fillStyle="#e8eef7";
+        ctx.font="800 20px system-ui, sans-serif";
+        ctx.fillText(d.id+" \u00b7 "+d.deg+" co-author"+(d.deg===1?"":"s"),pad,y0);
+        ctx.font="600 15px system-ui, sans-serif";
+        rows.forEach((r,i)=>{
+          const x=pad+(i%cols)*colW, y=y0+head+Math.floor(i/cols)*lineH;
+          ctx.fillStyle=MESH_TIER_COLORS[r.o.tier];
+          ctx.beginPath(); ctx.arc(x+5,y+8,4,0,2*Math.PI); ctx.fill();
+          ctx.fillStyle="#e8eef7";
+          ctx.fillText(r.o.id+" \u2014 "+r.w+" shared work"+(r.w===1?"":"s"),x+16,y,colW-24);
+        });
+      }
+      cv.toBlob(blob=>{
+        if(!blob) return;
+        const a=document.createElement("a");
+        a.href=URL.createObjectURL(blob);
+        a.download="bibliovera-collaboration"+(pinnedId?"-"+pinnedId.replace(/[^\w.-]+/g,"_"):"")+".png";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+      },"image/png");
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); alert("The PNG could not be rendered in this browser."); };
+    img.src=url;
+  };
 }
 
 // ── Shared retraction check ─────────────────────────────────────────────────
