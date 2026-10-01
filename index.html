@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bibliovera — Medical Journal Analytics · Pubvera</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233b82f6'/%3E%3Cg fill='%23ffffff' transform='translate(32 32) scale(0.82) translate(-32 -32)'%3E%3Crect x='6' y='11' width='42' height='8.1' rx='3.7'/%3E%3Crect x='11.3' y='24' width='31.3' height='8.1' rx='3.7'/%3E%3Crect x='16.7' y='37' width='20.7' height='8.1' rx='3.7'/%3E%3Crect x='22' y='50' width='10' height='8.1' rx='3.7'/%3E%3Crect x='51' y='25.3' width='7' height='5.5' rx='2.75' opacity='0.74'/%3E%3Crect x='51' y='38.3' width='7' height='5.5' rx='2.75' opacity='0.94'/%3E%3Crect x='51' y='51.3' width='7' height='5.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous"></script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-behavior:smooth;font-size:160%}
@@ -369,6 +369,7 @@
      before sign-in existed. Wired up by the module script at the end. -->
 <div class="auth-bar" id="authBar" hidden>
   <span class="auth-email" id="authEmail" hidden></span>
+  <span class="auth-email" id="authUnavailable" hidden>Sign-in is unavailable: a required script did not load.</span>
   <button type="button" class="auth-btn auth-btn-primary" id="authSignInBtn" hidden>Sign in with Google</button>
   <button type="button" class="auth-btn" id="authSignOutBtn" hidden>Sign out</button>
 </div>
@@ -1013,6 +1014,11 @@ function resetsAtText(v){
 // error text in the one-line .err paragraph.
 function errorHTML(e){
   const st=e&&e.status, d=(e&&e.data)||{};
+  if(st===401&&window.pubveraAuth&&window.pubveraAuth.unavailable){
+    // The Supabase script did not load, so a sign-in prompt could not work.
+    return '<div class="errcard"><h4>Sign-in required</h4>'+
+      '<p>Sign-in is unavailable: a required script did not load.</p></div>';
+  }
   if(st===401){
     // The raw error ("missing/invalid token") tells the user nothing they can
     // act on, and the remedy is always the same, so it is not shown.
@@ -1888,10 +1894,31 @@ async function initAuth() {
   // Either field empty: skip Supabase entirely.
   if (!url || !key) return;
 
-  // Dynamic import, not a static one: a static import runs before the fetch
-  // above, so an unconfigured page would still pay for the library.
-  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.117.0?deps=iceberg-js@0.8.1');
-  const sb = createClient(url, key);
+  // supabase-js 2.117.0, UMD build (global `supabase`), pinned with SRI.
+  // Injected only here, after the config check, so an unconfigured page
+  // still downloads nothing. Not a dynamic import(): it cannot carry an
+  // integrity hash, and the previous ESM CDN entry was a stub pulling
+  // further modules that included unversioned polyfills (/node/*.mjs).
+  // To upgrade: change the version in the URL and recompute the sha384
+  //   openssl dgst -sha384 -binary supabase.js | openssl base64 -A
+  try {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js';
+      s.integrity = 'sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6';
+      s.crossOrigin = 'anonymous';
+      s.onload = resolve;
+      s.onerror = reject; // network failure or integrity mismatch
+      document.head.appendChild(s);
+    });
+  } catch (e) {
+    // Say so, instead of a sign-in prompt that cannot work.
+    window.pubveraAuth.unavailable = true;
+    document.getElementById('authUnavailable').hidden = false;
+    bar.hidden = false;
+    return;
+  }
+  const sb = window.supabase.createClient(url, key);
   window.sb = sb;
 
   window.pubveraAuth = {
