@@ -620,7 +620,9 @@ function toCSV(rows,header){
   const cols=[];
   rows.forEach(r=>Object.keys(r||{}).forEach(k=>{if(!cols.includes(k))cols.push(k);}));
   const cell=v=>{
-    if(v===null||v===undefined||v===false)return "";
+    if(v===null||v===undefined)return "";
+    // false is a measured answer and must read "No"; empty means "no data".
+    if(v===false)return "No";
     if(v===true)return "Yes";
     let s=(typeof v==="object")?JSON.stringify(v):String(v);
     if(/[",\r\n]/.test(s)) s='"'+s.replace(/"/g,'""')+'"';
@@ -651,13 +653,19 @@ const viewProviders={};
 
 function registerView(key,fn){ viewProviders[key]=fn; }
 
+// Query inputs each module's last successful run was computed with, taken from
+// the params actually sent (plus client-side filters), not from the form fields.
+// They lead the export "filters", ahead of the quick-filter text and sort.
+const queryFilters={};
+
 function exportRows(key){
+  const qf=queryFilters[key]||[];
   const p=viewProviders[key];
   if(typeof p==="function"){
     const v=p()||{};
-    return {rows:Array.isArray(v.rows)?v.rows:[], scope:(v.filters||[]).join(" · ")};
+    return {rows:Array.isArray(v.rows)?v.rows:[], scope:qf.concat(v.filters||[]).join(" · ")};
   }
-  return {rows:rowsFromLastData(key)||[], scope:""};   // fallback: unfiltered module
+  return {rows:rowsFromLastData(key)||[], scope:qf.join(" · ")};   // fallback: unfiltered module
 }
 
 // Filtering and sorting are DOM-level (qfilter hides <tr>s, header clicks
@@ -683,7 +691,24 @@ function domView(key){
   return {rows:rows,filters:filters};
 }
 
-registerView("aff",()=>domView("aff"));
+// Growth in percent, exactly as the page shows it. The API "growth" is the
+// absolute difference recent - prior; the export keeps it and adds growth_pct
+// right after it. prior 0 has no percent (null -> empty cell). low_base rows
+// get the real percent in the export; their low_base column carries the caveat.
+function growthPct(r){
+  const recent=Number(r.recent_count)||0, prior=Number(r.prior_count)||0;
+  return prior===0?null:Math.round((recent-prior)/prior*100);
+}
+function withGrowthPct(r){
+  const o={};
+  Object.keys(r).forEach(k=>{o[k]=r[k];if(k==="growth")o.growth_pct=growthPct(r);});
+  if(!("growth_pct" in o))o.growth_pct=growthPct(r);
+  return o;
+}
+registerView("aff",()=>{
+  const v=domView("aff");
+  return {rows:v.rows.map(withGrowthPct),filters:v.filters};
+});
 // avg_citations arrives from the CLI as a raw float (3228.714285714286). The
 // table shows it through num(), i.e. at most one decimal, so the export rounds
 // it the same way: same Intl call, grouping off, so the two can never disagree
@@ -722,7 +747,8 @@ function downloadXLSX(key,filename){
   // Row 0: provenance heading (merged), row 1: blue header, data from row 2 on.
   const aoa=[[exportHeader(key,rows)],cols].concat(rows.map(r=>cols.map(c=>{
     const v=r?r[c]:"";
-    if(v===null||v===undefined||v===false)return "";
+    if(v===null||v===undefined)return "";
+    if(v===false)return "No";
     if(v===true)return "Yes";
     return (typeof v==="object")?JSON.stringify(v):v;
   })));
@@ -757,6 +783,12 @@ function downloadXLSX(key,filename){
   ws["!cols"]=colInfo.map(ci=>({wch:ci.wch}));
   ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:Math.max(cols.length-1,0)}}];
   ws["!freeze"]={xSplit:0,ySplit:2};
+  // Filter row = the column header (row index 1); row 0 is the provenance
+  // caption and must stay outside the range.
+  ws["!autofilter"]={ref:XLSX.utils.encode_range({
+    s:{r:1,c:0},
+    e:{r:aoa.length-1,c:Math.max(cols.length-1,0)}
+  })};
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,"Bibliovera");
   XLSX.writeFile(wb,filename);
@@ -1061,6 +1093,8 @@ async function runAff(){
   try{
     const data=await fetchJSON("/affiliations?"+p.toString());
     lastData.aff=data;
+    queryFilters.aff=[j||"all journals",p.get("years")+"y window","min "+p.get("threshold")+" recent",
+      "low base <"+p.get("minPrior"),"limit "+p.get("limit")];
     res.innerHTML=affTable(data,j,p);
     updateQcount(res);
   }catch(e){res.innerHTML=errorHTML(e);}
@@ -1100,7 +1134,7 @@ function affTable(rows,journal,params){
     }else if(r.low_base){
       growth='<span class="badge-low">⚠️ low base</span>';
     }else{
-      const pct=Math.round((recent-prior)/prior*100);
+      const pct=growthPct(r);
       const cls=pct>=0?'growth-positive':'growth-negative';
       growth='<span class="growth-badge '+cls+'">'+(pct>=0?'+':'')+pct+'%</span>';
     }
@@ -1125,6 +1159,8 @@ async function runAuth(){
   try{
     const data=await fetchJSON("/authors?"+p.toString());
     lastData.auth=data;
+    queryFilters.auth=(inst?['institution "'+inst+'"']:[]).concat([j||"all journals",
+      "min "+p.get("minWorks")+" works","limit "+p.get("limit")]);
     res.innerHTML=authTable(data,inst,p);
     updateQcount(res);
   }catch(e){res.innerHTML=errorHTML(e);}
@@ -1173,6 +1209,8 @@ async function runDrift(){
   try{
     const data=await fetchJSON("/drift?"+p.toString());
     lastData.drift=data;
+    queryFilters.drift=[j||"all journals",w1.replace(":","–")+" vs "+w2.replace(":","–"),
+      "top "+p.get("topN")];
     res.innerHTML=driftChart(data,j,w1,w2);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
@@ -1223,6 +1261,8 @@ async function runRead(){
       rows=rows.filter(r=>(minY<=2005||paperYear(r)>=minY)&&(paperCitations(r)>=minC));
     }
     lastData.read=rows;
+    queryFilters.read=['topic "'+topic+'"',"sort "+p.get("sort"),"limit "+p.get("limit")]
+      .concat(minY>2005?["from "+minY]:[],minC>0?["min "+minC+" citations"]:[]);
     res.innerHTML=readTable(rows,topic);
     updateQcount(res);
     checkRetractions(rows,"st-");
@@ -1278,6 +1318,9 @@ async function runRise(){
     lastData.rise=enriched.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,
       journal:x.r.journal||x.r.source||"",authors:x.r.authors||"",
       cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10}));
+    const minC=Number($("#rise_cites").value);
+    queryFilters.rise=['topic "'+topic+'"',j||"all journals","from "+minYear]
+      .concat(minC>0?["min "+minC+" citations"]:[],["limit "+p.get("limit")]);
     res.innerHTML=riseTable(enriched,topic,j,minYear);
     updateQcount(res);
     checkRetractions(enriched.map(x=>x.r),"rst-");
@@ -1325,6 +1368,7 @@ async function runMesh(){
     const data=await fetchJSON("/mesh?"+p.toString());
     const pairs=Array.isArray(data)?data:[];
     lastData.mesh=pairs;
+    queryFilters.mesh=['org "'+org+'"',"limit "+p.get("limit")];
     if(!pairs.length){res.innerHTML='<p class="meta">No co-authorship pairs found for "'+esc(org)+'". Try a broader institution name.</p>';return;}
     const authorCount=new Set(pairs.flatMap(p=>[p.author_a,p.author_b])).size;
     res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json','<button class="dl" title="The graph as shown, plus the co-author list when a researcher is pinned" onclick="downloadMeshPNG()">⬇ PNG</button>')+
