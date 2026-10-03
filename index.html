@@ -605,6 +605,7 @@ function downloadJSON(key,filename){
       rows_total:(rowsFromLastData(key)||[]).length,
       source:"OpenAlex (CC0)",
       ...((key==="read"||key==="rise")?{retraction_source:RETRACTION_SOURCE}:{}),
+      ...((key==="rise"&&risePoolText)?{pool_and_age_method:risePoolText}:{}),
       exported_at:new Date().toISOString()
     },
     rows:er.rows
@@ -900,6 +901,7 @@ function exportHeader(key,rows){
   if(sc) parts.push(sc);
   parts.push("source: OpenAlex (CC0)");
   if(key==="read"||key==="rise") parts.push("retraction check: "+RETRACTION_SOURCE);
+  if(key==="rise"&&risePoolText) parts.push(risePoolText);
   parts.push(new Date().toISOString().slice(0,10));
   return parts.join(" · ");
 }
@@ -1012,8 +1014,8 @@ async function readJSON(r){
   return d;
 }
 
-async function fetchJSON(url){
-  return readJSON(await fetch(url,{headers:await authHeaders()}));
+async function fetchJSON(url,signal){
+  return readJSON(await fetch(url,{headers:await authHeaders(),signal}));
 }
 
 // fetchJSON with a client-side timeout so a slow /check can't hang forever.
@@ -1313,40 +1315,97 @@ function readTable(rows,topic){
 }
 
 // ── Rising Papers ───────────────────────────────────────────────────────────
+// /curate caps limit at 100 (handleCurate in main.go), so the candidate pool is
+// two requests for the same topic/filters: the 100 most-cited and the 100
+// most-recent matches, merged and de-duplicated before velocity is computed.
+const RISE_POOL_SIZE=100;
+const RISE_AGE_NOTE="Age is estimated from publication year (mid-year), so cites/year is approximate.";
+let risePoolText="";   // pool + age-method text of the last run, for the note and the exports
+
+// Paper age in years from the publication year alone (no date is available).
+// Earlier years count from 1 July of that year; the current year counts half of
+// the time elapsed since 1 January. Floor 0.25 so a brand-new paper does not
+// divide by ~0. Missing / invalid year -> null (not rankable).
+function estimatePaperAgeYears(year,now){
+  const yr=Number(year);
+  if(!Number.isInteger(yr)||yr<=0)return null;
+  const t=now||new Date(), cur=t.getFullYear();
+  const ms=yr<cur?(t-new Date(yr,6,1)):(t-new Date(cur,0,1))/2;
+  return Math.max(0.25,ms/(365.25*86400000));
+}
+
+// De-duplication key: DOI, or the normalized title when the DOI is empty.
+function risePaperKey(r){
+  const d=paperDOI(r).toLowerCase();
+  if(d)return "doi:"+d;
+  const t=String(r.title||r.display_name||r.name||"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"");
+  return t?"title:"+t:"";
+}
+function mergeRisePools(pools){
+  const seen=new Set(), out=[];
+  pools.forEach(rows=>rows.forEach(r=>{
+    const k=risePaperKey(r);
+    if(k){if(seen.has(k))return;seen.add(k);}
+    out.push(r);
+  }));
+  return out;
+}
+
 async function runRise(){
   save();
   const topic=$("#rise_topic").value.trim();
   if(!topic){$("#rise_res").innerHTML='<p class="err">Please enter a topic.</p>';return;}
   const minYear=Number($("#rise_year").value);
-  const p=new URLSearchParams();
-  p.set("topic",topic);
-  const j=$("#rise_journal").value; if(j)p.set("journal",j);
-  p.set("sort","citations"); p.set("limit",$("#rise_lim").value);
+  const j=$("#rise_journal").value;
+  const limit=Number($("#rise_lim").value);
   const res=$("#rise_res"); res.innerHTML='<span class="spin"></span> Finding rising papers…';
   const runId=startRetractionRun("rise");
+  const ctrl=new AbortController(); retractionCtrl.rise=ctrl;   // a newer run aborts both pool requests
+  const current=()=>runId===retractionRun.rise;
+  const fetchPool=sort=>{
+    const p=new URLSearchParams();
+    p.set("topic",topic); if(j)p.set("journal",j);
+    p.set("sort",sort); p.set("limit",String(RISE_POOL_SIZE));
+    return fetchJSON("/curate?"+p.toString(),ctrl.signal);
+  };
   try{
-    const data=await fetchJSON("/curate?"+p.toString());
-    const rows=Array.isArray(data)?data:(data.works||data.results||[]);
-    const enriched=rows.map(r=>{
+    const [byCites,byDate]=await Promise.allSettled([fetchPool("citations"),fetchPool("date")]);
+    if(!current())return;
+    if(byCites.status==="rejected"&&byDate.status==="rejected")throw byCites.reason;
+    const rowsOf=s=>{const d=s.value;return Array.isArray(d)?d:(d.works||d.results||[]);};
+    const notes=[];
+    if(byCites.status==="rejected")notes.push("The most-cited pool could not be loaded; showing the most-recent pool only.");
+    if(byDate.status==="rejected")notes.push("The most-recent pool could not be loaded; showing the most-cited pool only.");
+    const merged=mergeRisePools([byCites,byDate].filter(s=>s.status==="fulfilled").map(rowsOf));
+    risePoolText="Candidate pool: up to "+RISE_POOL_SIZE+" most-cited + "+RISE_POOL_SIZE+
+      " most-recent matches ("+merged.length+" unique). "+RISE_AGE_NOTE;
+    const now=new Date(), minC=Number($("#rise_cites").value);
+    let noYear=0;
+    const enriched=[];
+    merged.forEach(r=>{
       const yr=paperYear(r), cites=paperCitations(r);
-      const age=Math.max(1,CUR_YEAR-yr+1);
-      return {r,yr,cites,velocity:(yr>0?cites/age:0)};
-    }).filter(x=>x.yr>=minYear && x.yr>0 && x.cites>=Number($("#rise_cites").value))
-      .sort((a,b)=>b.velocity-a.velocity);
-    lastData.rise=enriched.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,
+      const age=estimatePaperAgeYears(yr,now);
+      if(age===null){noYear++;return;}
+      enriched.push({r,yr,cites,velocity:cites/age});
+    });
+    const ranked=enriched.filter(x=>x.yr>=minYear && x.cites>=minC)
+      .sort((a,b)=>b.velocity-a.velocity).slice(0,limit);
+    if(noYear)notes.push(noYear+" paper"+(noYear===1?"":"s")+" without a valid publication year "+
+      (noYear===1?"was":"were")+" excluded from the ranking.");
+    lastData.rise=ranked.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,
       journal:x.r.journal||x.r.source||"",authors:x.r.authors||"",
       cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10}));
-    const minC=Number($("#rise_cites").value);
     queryFilters.rise=['topic "'+topic+'"',j||"all journals","from "+minYear]
-      .concat(minC>0?["min "+minC+" citations"]:[],["limit "+p.get("limit")]);
-    res.innerHTML=riseTable(enriched,topic,j,minYear);
+      .concat(minC>0?["min "+minC+" citations"]:[],["limit "+limit]);
+    res.innerHTML=riseTable(ranked,topic,j,minYear,notes.concat([risePoolText]));
     updateQcount(res);
-    checkRetractions(enriched.map(x=>x.r),lastData.rise,"rst-","rise",runId);
-  }catch(e){res.innerHTML=errorHTML(e);}
+    checkRetractions(ranked.map(x=>x.r),lastData.rise,"rst-","rise",runId);
+  }catch(e){if(current())res.innerHTML=errorHTML(e);}
 }
-function riseTable(items,topic,journal,minYear){
+function riseTable(items,topic,journal,minYear,notes){
+  const noteHTML=(notes||[]).map(n=>'<p class="note">'+esc(n)+'</p>').join("");
   if(!items.length) return '<p class="meta">No papers from '+minYear+' on for "'+esc(topic)+'"'+
-    (journal?' in '+esc(journal):'')+'. Try a lower min year or a broader topic.</p>';
+    (journal?' in '+esc(journal):'')+'. Try a lower min year or a broader topic.</p>'+noteHTML;
   const scope=journal?esc(journal):'all journals';
   let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+' · from '+minYear,
     'rise','bibliovera-rising-papers.json');
@@ -1363,8 +1422,8 @@ function riseTable(items,topic,journal,minYear){
       '<td id="rst-'+i+'">'+status+'</td></tr>';
   });
   h+='</tbody></table>';
-  h+='<p class="note">Cites/yr = total citations ÷ paper age (years since publication). A high value means the paper is accumulating citations fast — a "rising" signal, not just a lifetime total. Retraction status checked live (keyless).</p>';
-  return h;
+  h+='<p class="note">Cites/yr = total citations ÷ estimated paper age (years). A high value means the paper is accumulating citations fast — a "rising" signal, not just a lifetime total. Retraction status checked live (keyless).</p>';
+  return h+noteHTML;
 }
 
 // ── Collaboration network (D3 force-directed, zoom+pan) ─────────────────────
