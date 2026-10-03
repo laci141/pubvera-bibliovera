@@ -587,6 +587,8 @@ const num=n=>(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:1});
 const CUR_YEAR=new Date().getFullYear();
 
 // Raw JSON data of the last queries, per module — for the JSON button.
+// /check runs the retraction-checker CLI, which queries Crossref (main.go, cli-src-retraction).
+const RETRACTION_SOURCE="Crossref via retraction-checker";
 const lastData={aff:null,auth:null,drift:null,read:null,rise:null,mesh:null};
 
 function downloadJSON(key,filename){
@@ -602,6 +604,7 @@ function downloadJSON(key,filename){
       rows_exported:er.rows.length,
       rows_total:(rowsFromLastData(key)||[]).length,
       source:"OpenAlex (CC0)",
+      ...((key==="read"||key==="rise")?{retraction_source:RETRACTION_SOURCE}:{}),
       exported_at:new Date().toISOString()
     },
     rows:er.rows
@@ -896,6 +899,7 @@ function exportHeader(key,rows){
   const sc=exportRows(key).scope;
   if(sc) parts.push(sc);
   parts.push("source: OpenAlex (CC0)");
+  if(key==="read"||key==="rise") parts.push("retraction check: "+RETRACTION_SOURCE);
   parts.push(new Date().toISOString().slice(0,10));
   return parts.join(" · ");
 }
@@ -1013,12 +1017,13 @@ async function fetchJSON(url){
 }
 
 // fetchJSON with a client-side timeout so a slow /check can't hang forever.
-async function fetchJSONTimeout(url,ms){
+async function fetchJSONTimeout(url,ms,outer){
   // Headers first, before the clock starts: getSession() may quietly refresh an
   // expired token, and that refresh must not eat the request's own budget.
   const headers=await authHeaders();
   const ctrl=new AbortController();
   const t=setTimeout(()=>ctrl.abort(),ms);
+  if(outer){ if(outer.aborted)ctrl.abort(); else outer.addEventListener("abort",()=>ctrl.abort(),{once:true}); }
   try{
     return await readJSON(await fetch(url,{signal:ctrl.signal,headers:headers}));
   }finally{clearTimeout(t);}
@@ -1246,6 +1251,17 @@ function driftChart(rows,journal,w1,w2){
 }
 
 // ── Reading List + retraction check ─────────────────────────────────────────
+// One run generation per module. A new run bumps it and aborts the previous
+// run's in-flight /check requests; a callback whose run is no longer current
+// must not touch the DOM or the row data.
+const retractionRun={read:0,rise:0};
+const retractionCtrl={read:null,rise:null};
+function startRetractionRun(mod){
+  if(retractionCtrl[mod])retractionCtrl[mod].abort();
+  retractionCtrl[mod]=null;
+  return ++retractionRun[mod];
+}
+
 async function runRead(){
   save();
   const topic=$("#read_topic").value.trim();
@@ -1253,6 +1269,7 @@ async function runRead(){
   const p=new URLSearchParams();
   p.set("topic",topic); p.set("sort",$("#read_sort").value); p.set("limit",$("#read_lim").value);
   const res=$("#read_res"); res.innerHTML='<span class="spin"></span> Building list…';
+  const runId=startRetractionRun("read");
   try{
     const data=await fetchJSON("/curate?"+p.toString());
     let rows=Array.isArray(data)?data:(data.works||data.results||[]);
@@ -1265,7 +1282,7 @@ async function runRead(){
       .concat(minY>2005?["from "+minY]:[],minC>0?["min "+minC+" citations"]:[]);
     res.innerHTML=readTable(rows,topic);
     updateQcount(res);
-    checkRetractions(rows,"st-");
+    checkRetractions(rows,rows,"st-","read",runId);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 
@@ -1286,12 +1303,12 @@ function readTable(rows,topic){
   rows.forEach((r,i)=>{
     const doi=paperDOI(r);
     const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
-    const status=doi?'<span class="badge-checking" id="st-'+i+'">checking…</span>':'<span class="badge-checking">no DOI</span>';
+    const status=doi?'<span class="badge-checking">checking…</span>':'<span class="badge-checking">no DOI</span>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
       '<td class="n">'+num(paperCitations(r))+'</td><td id="st-'+i+'">'+status+'</td></tr>';
   });
   h+='</tbody></table>';
-  h+='<p class="note">Retraction status is checked live against Crossref &amp; OpenAlex via the retraction-checker (keyless). Papers without a DOI can\'t be verified.</p>';
+  h+='<p class="note">Retraction status is checked live against Crossref via the retraction-checker (keyless). Papers without a DOI can\'t be verified.</p>';
   return h;
 }
 
@@ -1306,6 +1323,7 @@ async function runRise(){
   const j=$("#rise_journal").value; if(j)p.set("journal",j);
   p.set("sort","citations"); p.set("limit",$("#rise_lim").value);
   const res=$("#rise_res"); res.innerHTML='<span class="spin"></span> Finding rising papers…';
+  const runId=startRetractionRun("rise");
   try{
     const data=await fetchJSON("/curate?"+p.toString());
     const rows=Array.isArray(data)?data:(data.works||data.results||[]);
@@ -1323,7 +1341,7 @@ async function runRise(){
       .concat(minC>0?["min "+minC+" citations"]:[],["limit "+p.get("limit")]);
     res.innerHTML=riseTable(enriched,topic,j,minYear);
     updateQcount(res);
-    checkRetractions(enriched.map(x=>x.r),"rst-");
+    checkRetractions(enriched.map(x=>x.r),lastData.rise,"rst-","rise",runId);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 function riseTable(items,topic,journal,minYear){
@@ -1338,7 +1356,7 @@ function riseTable(items,topic,journal,minYear){
     const r=x.r, doi=paperDOI(r);
     const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
     const vel='<span class="badge-velocity">'+num(x.velocity)+'</span>';
-    const status=doi?'<span class="badge-checking" id="rst-'+i+'">checking…</span>':'<span class="badge-checking">no DOI</span>';
+    const status=doi?'<span class="badge-checking">checking…</span>':'<span class="badge-checking">no DOI</span>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
       '<td class="n"><span class="year-pill">'+x.yr+'</span></td>'+
       '<td class="n">'+num(x.cites)+'</td><td class="n">'+vel+'</td>'+
@@ -1826,30 +1844,49 @@ function drawMeshGraph(pairs){
 }
 
 // ── Shared retraction check ─────────────────────────────────────────────────
-async function checkRetractions(rows,prefix){
-  const queue=rows.map((r,i)=>({i,doi:paperDOI(r)})).filter(x=>x.doi);
+// papers: the objects paperDOI() reads; store: the row objects the exports
+// read, same index. Result is kept on the store row as retraction_status
+// (retracted | no_retraction_found | unverified | no_doi) and
+// retraction_checked_at (ISO 8601 UTC, empty until a check has finished).
+async function checkRetractions(papers,store,prefix,mod,runId){
+  const current=()=>runId===retractionRun[mod];
+  if(!current())return;
+  retractionCtrl[mod]=new AbortController();
+  const signal=retractionCtrl[mod].signal;
+  const queue=papers.map((r,i)=>({i,doi:paperDOI(r)}));
+  store.forEach((row,i)=>{
+    if(!row||typeof row!=="object")return;
+    row.retraction_status=queue[i].doi?"unverified":"no_doi";
+    row.retraction_checked_at="";
+  });
+  const todo=queue.filter(x=>x.doi);
+  const finish=(i,status,html)=>{
+    if(!current())return;
+    const row=store[i];
+    if(row&&typeof row==="object"){row.retraction_status=status;row.retraction_checked_at=new Date().toISOString();}
+    const cell=$("#"+prefix+i); if(cell)cell.innerHTML=html;
+  };
   let active=0, idx=0;
   return new Promise(resolve=>{
     function next(){
-      if(idx>=queue.length && active===0){resolve();return;}
-      while(active<4 && idx<queue.length){
-        const {i,doi}=queue[idx++]; active++;
-        fetchJSONTimeout("/check?doi="+encodeURIComponent(doi),20000)
+      if(idx>=todo.length && active===0){resolve();return;}
+      while(active<4 && idx<todo.length){
+        const {i,doi}=todo[idx++]; active++;
+        fetchJSONTimeout("/check?doi="+encodeURIComponent(doi),20000,signal)
           .then(res=>{
-            const cell=$("#"+prefix+i); if(!cell)return;
             if(res && res.retracted===true){
-              cell.innerHTML='<span class="badge-retracted">⚠️ RETRACTED</span>';
+              finish(i,"retracted",'<span class="badge-retracted">⚠️ RETRACTED</span>');
             }else if(res && res.error){
-              cell.innerHTML='<span class="badge-checking">unverified</span>';
+              finish(i,"unverified",'<span class="badge-checking">unverified</span>');
             }else{
-              cell.innerHTML='<span class="badge-ok">✓ clean</span>';
+              finish(i,"no_retraction_found",'<span class="badge-ok">✓ No retraction found</span>');
             }
           })
-          .catch(()=>{const cell=$("#"+prefix+i); if(cell)cell.innerHTML='<span class="badge-checking">unverified</span>';})
+          .catch(()=>finish(i,"unverified",'<span class="badge-checking">unverified</span>'))
           .finally(()=>{active--;next();});
       }
     }
-    if(!queue.length){resolve();return;}
+    if(!todo.length){resolve();return;}
     next();
   });
 }
