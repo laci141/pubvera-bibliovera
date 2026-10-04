@@ -619,6 +619,14 @@ function downloadJSON(key,filename){
   URL.revokeObjectURL(url);
 }
 
+// Formula-injection guard (OWASP CSV Injection) for every spreadsheet cell: a
+// STRING that starts with = + - @ TAB or CR gets a leading single quote, so
+// Excel/Sheets read it as text. Numbers, booleans and null pass unchanged (a
+// growth of -33 stays a number). CSV quoting is applied after this.
+function neutralizeCell(v){
+  return (typeof v==="string"&&/^[=+\-@\t\r]/.test(v))?"'"+v:v;
+}
+
 // Converts any array of rows to CSV (RFC4180). Excel-friendly: BOM + CRLF.
 function toCSV(rows,header){
   const cols=[];
@@ -628,7 +636,7 @@ function toCSV(rows,header){
     // false is a measured answer and must read "No"; empty means "no data".
     if(v===false)return "No";
     if(v===true)return "Yes";
-    let s=(typeof v==="object")?JSON.stringify(v):String(v);
+    let s=(typeof v==="object")?JSON.stringify(v):String(neutralizeCell(v));
     if(/[",\r\n]/.test(s)) s='"'+s.replace(/"/g,'""')+'"';
     return s;
   };
@@ -749,12 +757,12 @@ function downloadXLSX(key,filename){
   const cols=[];
   rows.forEach(r=>Object.keys(r||{}).forEach(k=>{if(!cols.includes(k))cols.push(k);}));
   // Row 0: provenance heading (merged), row 1: blue header, data from row 2 on.
-  const aoa=[[exportHeader(key,rows)],cols].concat(rows.map(r=>cols.map(c=>{
+  const aoa=[[neutralizeCell(exportHeader(key,rows))],cols.map(c=>neutralizeCell(c))].concat(rows.map(r=>cols.map(c=>{
     const v=r?r[c]:"";
     if(v===null||v===undefined)return "";
     if(v===false)return "No";
     if(v===true)return "Yes";
-    return (typeof v==="object")?JSON.stringify(v):v;
+    return (typeof v==="object")?JSON.stringify(v):neutralizeCell(v);
   })));
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   // Column analysis: long text (title, topic) left-aligned + wide; short/numeric centred.
