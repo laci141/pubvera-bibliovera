@@ -37,10 +37,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -201,6 +203,32 @@ func stderrForLog(s string) string {
 	return truncate(strings.Join(strings.Fields(s), " "), 300)
 }
 
+// docker stop and Watchtower wait 10 s after SIGTERM before SIGKILL, so 9 s
+// finishes in-flight requests and still exits cleanly.
+const shutdownGrace = 9 * time.Second
+
+// serveUntil runs listen and, when ctx is done first, drains the server with
+// srv.Shutdown for up to grace. It returns nil when listen ends with
+// http.ErrServerClosed, listen's error otherwise, or Shutdown's error
+// (context.DeadlineExceeded when the grace expires) after a signal.
+func serveUntil(ctx context.Context, srv *http.Server, listen func() error, grace time.Duration) error {
+	errCh := make(chan error, 1)
+	go func() { errCh <- listen() }()
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+	sctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	shutdownErr := srv.Shutdown(sctx)
+	<-errCh
+	return shutdownErr
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleRoot)
@@ -237,9 +265,16 @@ func main() {
 		IdleTimeout:       srvIdleTimeout,
 	}
 	log.Printf("bibliovera-web listening on %s (CLI: %s, DB: %s, slots=%d, crossref_polite=%s)", addr, cliBinaryPath(), dbPath(), cliSem.capacity(), polite)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		log.Printf("shutdown: signal received, draining for up to %s", shutdownGrace)
+	}()
+	if err := serveUntil(ctx, srv, srv.ListenAndServe, shutdownGrace); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+	log.Printf("shutdown complete")
 }
 
 // browserConfig is the bootstrap payload /config.json hands to the page so it
