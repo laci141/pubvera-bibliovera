@@ -450,7 +450,7 @@
   </select>
   <label>Min works · <span class="val" id="auth_minw_v">2</span></label>
   <input type="range" id="auth_minw" min="1" max="10" value="2" oninput="auth_minw_v.textContent=this.value">
-  <label>Limit · <span class="val" id="auth_lim_v">25</span></label>
+  <label>Authors shown (max) · <span class="val" id="auth_lim_v">25</span></label>
   <input type="range" id="auth_lim" min="1" max="300" value="25" oninput="auth_lim_v.textContent=this.value">
   <button class="btn" onclick="runAuth()">Run Analysis</button>
   <div class="results" id="auth_res"></div>
@@ -963,6 +963,7 @@ function setW2(y){y=Number(y);$("#drift_w2_v").textContent=y+"–"+(y+4);}
   if(s.minp){$("#aff_minp").value=s.minp;$("#aff_minp_v").textContent=s.minp;}
   if(s.inst)$("#auth_inst").value=s.inst;
   if(s.minw){$("#auth_minw").value=s.minw;$("#auth_minw_v").textContent=s.minw;}
+  if(s.alim){$("#auth_lim").value=s.alim;$("#auth_lim_v").textContent=s.alim;}
   if(s.djournal)$("#drift_journal").value=s.djournal;
   if(s.rtopic)$("#read_topic").value=s.rtopic;
   if(s.ritopic)$("#rise_topic").value=s.ritopic;
@@ -974,7 +975,7 @@ function setW2(y){y=Number(y);$("#drift_w2_v").textContent=y+"–"+(y+4);}
 }catch(e){}})();
 function save(){localStorage.setItem("bibliovera_form",JSON.stringify({
   journal:$("#aff_journal").value,years:$("#aff_years").value,thr:$("#aff_thr").value,
-  minp:$("#aff_minp").value,inst:$("#auth_inst").value,minw:$("#auth_minw").value,
+  minp:$("#aff_minp").value,inst:$("#auth_inst").value,minw:$("#auth_minw").value,alim:$("#auth_lim").value,
   djournal:$("#drift_journal").value,rtopic:$("#read_topic").value,
   ritopic:$("#rise_topic").value,rijournal:$("#rise_journal").value,
   ryear:$("#read_year").value,rcites:$("#read_cites").value,ricites:$("#rise_cites").value,
@@ -1210,7 +1211,12 @@ function authTable(rows,inst,params){
   rows.forEach((r,i)=>{h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+authorLink(r)+'</td>'+
     '<td class="n">'+num(r.works)+'</td><td class="n">'+num(r.total_citations)+'</td>'+
     '<td class="n">'+num(r.avg_citations)+'</td></tr>';});
-  return h+'</tbody></table>';
+  h+='</tbody></table>';
+  if(params){
+    const lim=Number(params.get('limit'))||0;
+    h+='<p class="note">Candidate pool: the top '+(lim*5)+' ranked authors, then filtered to at least '+esc(params.get('minWorks')||'')+' works; up to '+lim+' are shown'+(rows.length<lim?' (only '+rows.length+' passed the filter)':'')+'.</p>';
+  }
+  return h;
 }
 
 async function runDrift(){
