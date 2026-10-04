@@ -276,13 +276,17 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(browserConfig{SupabaseURL: supaURL, SupabaseAnonKey: supaKey})
 	case "/", "/index.html":
-		if data, err := os.ReadFile("index.html"); err == nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(data)
+		data, err := os.ReadFile("index.html")
+		if err != nil {
+			// A missing index.html is a broken image, not a healthy app. Answering
+			// 200 "ok" here hid that from anything that checks "/". /healthz stays
+			// the liveness probe the container healthcheck uses.
+			log.Printf("root: index.html unavailable: %v", err)
+			http.Error(w, "UI unavailable", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("ok"))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(data)
 	default:
 		http.NotFound(w, r)
 	}
