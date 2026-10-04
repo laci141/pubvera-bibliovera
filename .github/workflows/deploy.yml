@@ -18,6 +18,14 @@ env:
   # Same version as pubvera-recallis and pubvera-grantvera.
   GOVULNCHECK_VERSION: v1.8.0
 
+# One run per workflow and ref. On a pull request a newer push cancels the
+# older run: it only proves the change builds. On main runs queue instead of
+# being cancelled: a cancelled run could stop mid-push, and queueing makes the
+# newest commit the last one to move :latest.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-26.04
