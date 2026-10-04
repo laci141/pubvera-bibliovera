@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -44,6 +45,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 func cliBinaryPath() string {
@@ -335,8 +337,13 @@ func handleAffiliations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args := []string{"affiliation-growth", "--json", "--db", dbPath()}
-	if v := strings.TrimSpace(q.Get("journal")); v != "" {
-		args = append(args, "--journal", v)
+	journal, err := textParam(q, "journal", maxJournalChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if journal != "" {
+		args = append(args, "--journal", journal)
 	}
 	if a, err := intFlag(q.Get("years"), "years", 1, 100); err != nil {
 		writeErr(w, err)
@@ -413,11 +420,21 @@ func handleAuthors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	args := []string{"rank-authors", "--json", "--db", dbPath()}
-	if v := strings.TrimSpace(q.Get("institution")); v != "" {
-		args = append(args, "--institution", v)
+	institution, err := textParam(q, "institution", maxNameChars)
+	if err != nil {
+		writeErr(w, err)
+		return
 	}
-	if v := strings.TrimSpace(q.Get("journal")); v != "" {
-		args = append(args, "--journal", v)
+	journal, err := textParam(q, "journal", maxJournalChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if institution != "" {
+		args = append(args, "--institution", institution)
+	}
+	if journal != "" {
+		args = append(args, "--journal", journal)
 	}
 	args = append(args, "--limit", strconv.Itoa(cliLimit))
 
@@ -463,8 +480,13 @@ func handleDrift(w http.ResponseWriter, r *http.Request) {
 
 	args := []string{"drift", "--json", "--db", dbPath(),
 		"--window1", w1, "--window2", w2, "--top-n", strconv.Itoa(topN)}
-	if v := strings.TrimSpace(q.Get("journal")); v != "" {
-		args = append(args, "--journal", v)
+	journal, err := textParam(q, "journal", maxJournalChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if journal != "" {
+		args = append(args, "--journal", journal)
 	}
 
 	raw, err := runCLIRaw(r.Context(), args)
@@ -481,9 +503,19 @@ func handleDrift(w http.ResponseWriter, r *http.Request) {
 // and the Rising Papers module (sort=per-year, ranked by the CLI in SQL).
 func handleCurate(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	topic := strings.TrimSpace(q.Get("topic"))
+	topic, err := textParam(q, "topic", maxNameChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	if topic == "" {
 		writeErr(w, badRequest("topic parameter required"))
+		return
+	}
+
+	journal, err := textParam(q, "journal", maxJournalChars)
+	if err != nil {
+		writeErr(w, err)
 		return
 	}
 
@@ -497,8 +529,8 @@ func handleCurate(w http.ResponseWriter, r *http.Request) {
 	// --sort per-year needs the local store.
 	args := []string{"curate", "--topic", topic, "--json", "--db", dbPath(),
 		"--limit", strconv.Itoa(limit), "--data-source", "local"}
-	if j := strings.TrimSpace(q.Get("journal")); j != "" {
-		args = append(args, "--journal", j)
+	if journal != "" {
+		args = append(args, "--journal", journal)
 	}
 	if s := strings.TrimSpace(q.Get("sort")); s != "" {
 		switch s {
@@ -531,7 +563,11 @@ const maxMeshPairs = 500
 // (nodes = authors, links = shared_works) from these pairs.
 func handleMesh(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	org := strings.TrimSpace(q.Get("org"))
+	org, err := textParam(q, "org", maxNameChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	if org == "" {
 		writeErr(w, badRequest("org parameter required"))
 		return
@@ -558,8 +594,16 @@ func handleMesh(w http.ResponseWriter, r *http.Request) {
 // Calls the retraction-checker CLI and returns retraction status.
 func handleCheck(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	doi := strings.TrimSpace(q.Get("doi"))
-	pmid := strings.TrimSpace(q.Get("pmid"))
+	doi, err := textParam(q, "doi", maxDOIChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	pmid, err := textParam(q, "pmid", maxPMIDChars)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 
 	if doi == "" && pmid == "" {
 		writeErr(w, badRequest("doi or pmid parameter required"))
@@ -586,7 +630,7 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	// so the page does not break; a 200 here made a full server look like a
 	// successful lookup.
 	waitStart := time.Now()
-	err := cliSem.acquire(r.Context())
+	err = cliSem.acquire(r.Context())
 	waitMS := time.Since(waitStart).Milliseconds()
 	if err != nil {
 		log.Printf("cli: busy bin=retraction cmd=%s wait_ms=%d err=%v", label, waitMS, err)
@@ -675,6 +719,29 @@ func intFlag(raw, name string, min, max int) ([]string, error) {
 		return nil, badRequest("%s must be between %d and %d", name, min, max)
 	}
 	return []string{"--" + name, strconv.Itoa(n)}, nil
+}
+
+// Maximum lengths, in characters, for free-text query params. Over-long input
+// is rejected with 400, never truncated: a silently shortened DOI or journal
+// would query something the caller did not ask for. Each limit is generous
+// for real names and DOIs (OWASP Input Validation: enforce a maximum length on
+// every input) while keeping megabyte values out of CLI args and logs.
+const (
+	maxNameChars    = 200 // topic, institution, org
+	maxJournalChars = 100
+	maxDOIChars     = 300
+	maxPMIDChars    = 20
+)
+
+// textParam returns the trimmed query value, or a 400 when it has more than
+// max characters (runes, not bytes). Callers run it before the value reaches
+// CLI args or a log line.
+func textParam(q url.Values, name string, max int) (string, error) {
+	v := strings.TrimSpace(q.Get(name))
+	if utf8.RuneCountInString(v) > max {
+		return "", badRequest("%s is too long (max %d characters)", name, max)
+	}
+	return v, nil
 }
 
 // optInt parses an optional integer query param into a value (not a flag),
