@@ -34,7 +34,7 @@
 # value re-declares it with a bare ARG and inherits this default. Declaring
 # the default inside the builder stage only left the label empty on
 # pubvera-recallis (measured 2026-09-24), and CI now fails on that.
-ARG PP_LIBRARY_COMMIT=58edea349ce3df8a301d4d8950119487c32604b8
+ARG PP_LIBRARY_COMMIT=7376d5fc0da12663c1234a0e72e19912516c76d2
 
 # ---- Stage 1: build both CLIs from upstream source -------------------------
 # Two RUN lines, not one: a single go install accepts packages from one module
