@@ -1,6 +1,7 @@
-// Rising Papers test: candidate pool (most-cited + most-recent), merge and
-// de-duplication, mid-year age estimate, ranking, one-pool-fails handling,
-// stale-run handling, and the pool/age text in the note and the export provenance.
+// Rising Papers test: one /curate?sort=per-year request, server-side
+// citations_per_year as the rate, pub_date display (year fallback), client-side
+// min-year / min-citations filters, stale-run handling, and the method text in
+// the note and the export provenance.
 //
 // Run: node tools/rising_test.js
 //
@@ -76,7 +77,7 @@ const sandbox = {
       return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify({ retracted: false }) });
     }
     const q = new URLSearchParams(url.split("?")[1] || "");
-    const call = { sort: q.get("sort"), limit: q.get("limit"), topic: q.get("topic"), signal: opts && opts.signal };
+    const call = { sort: q.get("sort"), limit: q.get("limit"), topic: q.get("topic"), journal: q.get("journal"), signal: opts && opts.signal };
     curateCalls.push(call);
     return new Promise((resolve, reject) => {
       const signal = call.signal;
@@ -105,8 +106,7 @@ const run = code => vm.runInContext(code, sandbox);
 
 const tick = () => new Promise(r => setTimeout(r, 10));
 const NOW_YEAR = new Date().getFullYear();
-const paper = (title, doi, year, cites) => ({ title, doi, journal: "Lancet", year, cited_by_count: cites });
-const poolBySort = (cited, recent) => call => (call.sort === "date" ? recent : cited);
+const paper = (title, doi, year, cites, cpy, pub) => ({ title, doi, journal: "Lancet", year, cited_by_count: cites, citations_per_year: cpy, pub_date: pub === undefined ? "" : pub });
 const risen = () => run("lastData.rise") || [];
 const dois = () => risen().map(r => r.doi);
 const resHTML = () => byId("rise_res").innerHTML;
@@ -119,110 +119,87 @@ function setForm() {
 (async () => {
   setForm();
 
-  // ── Test A: a high-velocity recent paper that exists only in the date pool ──
-  const oldCited = [1, 2, 3, 4, 5].map(i => paper("Old " + i, "10.1/old" + i, NOW_YEAR - 10, 500 + i));
-  const recentOnly = paper("Recent hot", "10.1/recent", NOW_YEAR, 40);
-  curateHandler = poolBySort(oldCited, [recentOnly, paper("Recent cold", "10.1/cold", NOW_YEAR, 0)]);
+  // ── Test A: one request, sort=per-year, limit=100; order and rate come from the server ──
+  const rows = [
+    paper("Hot", "10.1/hot", 2024, 40, 25.5, "2024-09-01"),
+    paper("Mid", "10.1/mid", 2015, 900, 9.1, "2015-03-02"),
+    paper("Cold", "10.1/cold", 2010, 5000, 2.2, ""),
+  ];
+  curateHandler = () => rows;
   curateCalls.length = 0;
+  byId("rise_journal").value = "lancet";
   await run("runRise()"); await tick();
-  check("A: recent paper that is only in the date pool appears in the ranked result", dois().includes("10.1/recent"));
-  check("A: it ranks first (velocity beats the old high-total papers)", dois()[0] === "10.1/recent");
-  const sorts = curateCalls.map(c => c.sort).sort().join(",");
-  check("A: exactly two /curate requests, sort=citations and sort=date (" + sorts + ")", sorts === "citations,date");
-  check("A: both pools use limit=100 (" + curateCalls.map(c => c.limit).join(",") + ")", curateCalls.length === 2 && curateCalls.every(c => c.limit === "100"));
+  byId("rise_journal").value = "";
+  check("A: exactly one /curate request (" + curateCalls.length + ")", curateCalls.length === 1);
+  check("A: sort=per-year, limit=100 (" + curateCalls[0].sort + "," + curateCalls[0].limit + ")", curateCalls[0].sort === "per-year" && curateCalls[0].limit === "100");
+  check("A: topic and journal are forwarded", curateCalls[0].topic === "gene therapy" && curateCalls[0].journal === "lancet");
+  check("A: server order is kept, not re-ranked by cited_count (" + dois().join(">") + ")", dois().join(">") === "10.1/hot>10.1/mid>10.1/cold");
+  check("A: rate is the server's citations_per_year", risen()[0].citations_per_year === 25.5 && risen()[1].citations_per_year === 9.1);
+  check("A: shown rate in the table", resHTML().includes('<span class="badge-velocity">25.5</span>'));
 
-  // ── Test B: duplicates across the pools appear once (DOI, then normalized title) ──
-  const shared = paper("Shared paper", "10.1/Shared", NOW_YEAR - 2, 100);
-  const sharedUpper = paper("Shared paper", "https://doi.org/10.1/shared", NOW_YEAR - 2, 100);
-  const noDoiA = paper("A  Paper: Without DOI!", "", NOW_YEAR - 3, 90);
-  const noDoiB = paper("a paper without doi", "", NOW_YEAR - 3, 90);
-  curateHandler = poolBySort([shared, noDoiA, paper("Only cited", "10.1/oc", NOW_YEAR - 4, 80)],
-    [sharedUpper, noDoiB, paper("Only recent", "10.1/or", NOW_YEAR, 5)]);
-  await run("runRise()"); await tick();
-  const sharedCount = risen().filter(r => /^10\.1\/shared$/i.test(r.doi)).length;
-  const noDoiCount = risen().filter(r => /paper without doi/i.test(r.title.replace(/[^\w ]/g, ""))).length;
-  check("B: DOI duplicate across pools appears once (" + sharedCount + ")", sharedCount === 1);
-  check("B: DOI-less duplicate (same normalized title) appears once (" + noDoiCount + ")", noDoiCount === 1);
-  check("B: 4 unique papers in total (" + risen().length + ")", risen().length === 4);
-  check("B: the note carries the real unique count", /\(4 unique\)/.test(resHTML()));
+  // ── Test B: pub_date shown, year fallback when empty ──
+  check("B: pub_date is displayed", resHTML().includes('<span class="year-pill">2024-09-01</span>'));
+  check("B: empty pub_date falls back to the year", resHTML().includes('<span class="year-pill">2010</span>'));
+  check("B: export rows carry pub_date and keep the existing columns",
+    ["title", "doi", "year", "pub_date", "journal", "authors", "cited_by_count", "citations_per_year"].every(k => k in risen()[0]));
 
-  // ── Test C: estimatePaperAgeYears at a fixed "now" ──
-  if (run("typeof estimatePaperAgeYears") !== "function") {
-    check("C: estimatePaperAgeYears exists", false);
-  } else {
-    const age = (y, now) => run("estimatePaperAgeYears")(y, now);
-    const now = new Date(2026, 9, 3);   // 3 Oct 2026, local time
-    check("C: current-year paper is younger than 1 year (" + age(2026, now) + ")", age(2026, now) > 0.25 && age(2026, now) < 1);
-    check("C: previous-year paper is between 1 and 2 years (" + age(2025, now) + ")", age(2025, now) > 1 && age(2025, now) < 2);
-    const early = new Date(2026, 0, 2);
-    check("C: floor 0.25 for a current-year paper in early January (" + age(2026, early) + ")", age(2026, early) === 0.25);
-    check("C: previous-year paper is (now - 1 July)/year (" + age(2025, now).toFixed(3) + ")",
-      Math.abs(age(2025, now) - (now - new Date(2025, 6, 1)) / (365.25 * 86400000)) < 1e-9);
-    const bad = [0, -5, null, undefined, NaN, "abc", "", 2026.5].map(y => age(y, now));
-    check("C: missing / invalid year gives null, never a number (" + JSON.stringify(bad) + ")", bad.every(v => v === null));
-    check("C: numeric string year is accepted", age("2025", now) === age(2025, now));
-  }
+  // ── Test C: the slider only limits the rows shown ──
+  byId("rise_lim").value = "2";
+  await run("runRise()"); await tick();
+  check("C: limit 2 shows the first two server rows (" + dois().join(",") + ")", dois().join(",") === "10.1/hot,10.1/mid");
+  check("C: the request limit stays 100 (" + curateCalls[curateCalls.length - 1].limit + ")", curateCalls[curateCalls.length - 1].limit === "100");
+  byId("rise_lim").value = "15";
 
-  // ── Test D: same cited_by_count, different years -> the newer paper ranks higher ──
-  curateHandler = poolBySort([paper("Older", "10.1/older", NOW_YEAR - 3, 100), paper("Newer", "10.1/newer", NOW_YEAR - 1, 100)], []);
+  // ── Test D: client-side min year and min citations ──
+  byId("rise_year").value = "2012";
   await run("runRise()"); await tick();
-  check("D: newer paper ranks above the older one with equal citations (" + dois().join(" > ") + ")",
-    dois().indexOf("10.1/newer") === 0 && dois().indexOf("10.1/older") === 1);
-  curateHandler = poolBySort([paper("Last year", "10.1/ly", NOW_YEAR - 1, 100), paper("This year", "10.1/ty", NOW_YEAR, 100)], []);
+  check("D: min year drops older rows (" + dois().join(",") + ")", dois().join(",") === "10.1/hot,10.1/mid");
+  byId("rise_year").value = "2000"; byId("rise_cites").value = "100";
   await run("runRise()"); await tick();
-  check("D: current-year paper ranks above last year's with equal citations (" + dois().join(" > ") + ")", dois()[0] === "10.1/ty");
+  check("D: min citations drops low-cited rows (" + dois().join(",") + ")", dois().join(",") === "10.1/mid,10.1/cold");
+  byId("rise_cites").value = "0";
 
-  // ── Test E: one pool fails -> the other pool plus a visible note ──
-  const cited = [paper("Cited 1", "10.1/c1", NOW_YEAR - 5, 300)];
-  const recent = [paper("Recent 1", "10.1/r1", NOW_YEAR, 30)];
-  curateHandler = call => (call.sort === "date" ? Promise.reject(new Error("date pool failed")) : cited);
+  // ── Test E: failure -> the existing error path ──
+  curateHandler = () => Promise.reject(new Error("curate down"));
   await run("runRise()"); await tick();
-  check("E: date pool fails -> rows from the citations pool (" + dois().join(",") + ")", dois().join(",") === "10.1/c1");
-  check("E: visible note names the failed pool", /most-recent pool could not be loaded/i.test(resHTML()));
-  curateHandler = call => (call.sort === "citations" ? Promise.reject(new Error("cited pool failed")) : recent);
-  await run("runRise()"); await tick();
-  check("E: citations pool fails -> rows from the date pool (" + dois().join(",") + ")", dois().join(",") === "10.1/r1");
-  check("E: visible note names the failed pool (citations)", /most-cited pool could not be loaded/i.test(resHTML()));
-  curateHandler = () => Promise.reject(new Error("both down"));
-  await run("runRise()"); await tick();
-  check("E: both pools fail -> the existing error path", /<p class="err">both down<\/p>/.test(resHTML()));
+  check("E: request failure shows the error", /<p class="err">curate down<\/p>/.test(resHTML()));
 
-  // ── Test E2: stale run. Run 1's responses arrive after run 2 has finished. ──
+  // ── Test F: stale run. Run 1's response arrives after run 2 has finished. ──
   const held = [];
   sandbox.ignoreAbort = true;
   curateHandler = call => new Promise(resolve => held.push({ call, resolve }));
   const run1 = run("runRise()"); await tick();
-  const run1Calls = curateCalls.slice(-2);
-  curateHandler = poolBySort([paper("Run two", "10.1/two", NOW_YEAR - 1, 50)], []);
+  const run1Call = curateCalls[curateCalls.length - 1];
+  curateHandler = () => [paper("Run two", "10.1/two", 2020, 50, 8, "2020-01-01")];
   await run("runRise()"); await tick();
-  check("E2: run 1's two /curate requests are aborted by run 2", run1Calls.length === 2 && run1Calls.every(c => c.signal && c.signal.aborted));
+  check("F: run 1's /curate request is aborted by run 2", !!run1Call.signal && run1Call.signal.aborted);
   const before = resHTML(), dataBefore = JSON.stringify(risen());
-  held.forEach(h => h.resolve(h.call.sort === "date" ? [paper("Stale", "10.1/stale", NOW_YEAR, 99)] : [paper("Stale cited", "10.1/stale2", NOW_YEAR - 1, 99)]));
+  held.forEach(h => h.resolve([paper("Stale", "10.1/stale", 2024, 99, 99, "2024-01-01")]));
   await run1; await tick();
   sandbox.ignoreAbort = false;
-  check("E2: run 1's late responses leave the result HTML unchanged", resHTML() === before && !/stale/i.test(resHTML()));
-  check("E2: run 1's late responses leave the row data unchanged", JSON.stringify(risen()) === dataBefore && dois().join(",") === "10.1/two");
+  check("F: run 1's late response leaves the result HTML unchanged", resHTML() === before && !/stale/i.test(resHTML()));
+  check("F: run 1's late response leaves the row data unchanged", JSON.stringify(risen()) === dataBefore && dois().join(",") === "10.1/two");
 
-  // ── Test F: invalid year excluded from the ranking and counted in the note ──
-  curateHandler = poolBySort([paper("No year", "10.1/ny", 0, 500), paper("Has year", "10.1/hy", NOW_YEAR - 2, 50)], [paper("Bad year", "10.1/by", "n/a", 70)]);
+  // ── Test G: rows without any valid year are excluded and counted ──
+  curateHandler = () => [paper("No year", "10.1/ny", 0, 500, 50, ""), paper("Has year", "10.1/hy", 2020, 50, 5, "2020-05-05")];
   await run("runRise()"); await tick();
-  check("F: rows without a valid year are not ranked (" + dois().join(",") + ")", dois().join(",") === "10.1/hy");
-  check("F: the note counts the excluded rows", /2 papers? without a valid publication year/i.test(resHTML()));
+  check("G: row without a year is not shown (" + dois().join(",") + ")", dois().join(",") === "10.1/hy");
+  check("G: the note counts the excluded row", /1 paper without a valid publication year/i.test(resHTML()));
+  curateHandler = () => [paper("Date only", "10.1/do", undefined, 10, 3, "2019-02-03")];
+  await run("runRise()"); await tick();
+  check("G: pub_date-only row is shown with year 2019 (" + JSON.stringify(risen().map(r => r.year)) + ")", risen().length === 1 && risen()[0].year === 2019);
 
-  // ── Test G: transparency text under the table and in the export provenance ──
-  curateHandler = poolBySort(oldCited, [recentOnly]);
+  // ── Test H: method text under the table and in the export provenance ──
+  curateHandler = () => rows;
   await run("runRise()"); await tick();
-  const noteText = "Candidate pool: up to 100 most-cited + 100 most-recent matches (6 unique). Age is estimated from publication year (mid-year), so cites/year is approximate.";
-  check("G: note under the table has the exact wording and the real N", resHTML().includes(noteText));
+  const method = "Ranked by average citations per year since publication (local Lancet mirror).";
+  check("H: note under the table states the method and the age rule", resHTML().includes(method) && resHTML().includes("1 July of the publication year") && resHTML().includes("at least 0.25 years"));
+  check("H: note says the filters are client-side on the top 100", resHTML().includes("applied to the top 100 ranked rows"));
   const head = run('exportHeader("rise", lastData.rise)');
-  check("G: export header carries the pool and age method", head.includes("Candidate pool: up to 100 most-cited + 100 most-recent matches (6 unique)") && head.includes("Age is estimated from publication year"));
+  check("H: export header carries the method", head.includes(method));
   run('downloadJSON("rise","x.json")');
   const payload = JSON.parse(blobs[blobs.length - 1]);
-  check("G: JSON export provenance carries the same text", /Candidate pool: up to 100 most-cited/.test(JSON.stringify(payload.export)) && /mid-year/.test(JSON.stringify(payload.export)));
-  check("G: exported rows keep the existing columns",
-    ["title", "doi", "year", "journal", "authors", "cited_by_count", "citations_per_year"].every(k => k in payload.rows[0]));
-  const hot = payload.rows.find(r => r.doi === "10.1/recent");
-  check("G: citations_per_year comes from the age estimate (" + (hot && hot.citations_per_year) + ")", !!hot && hot.citations_per_year > 40);
+  check("H: JSON export provenance carries the method", JSON.stringify(payload.export).includes(method));
 
   if (failed) {
     console.error("\n" + failed + " check(s) FAILED");

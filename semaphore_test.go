@@ -238,6 +238,10 @@ func runFakeCLI(mode string) {
 	switch mode {
 	case "ok":
 		fmt.Print(`[{"a":1}]`)
+	case "args":
+		// Echo the CLI arguments back as the JSON body so a test can assert them.
+		b, _ := json.Marshal(os.Args[1:])
+		fmt.Print(string(b))
 	case "bytes":
 		n, _ := strconv.Atoi(os.Getenv("FAKE_CLI_BYTES"))
 		chunk := bytes.Repeat([]byte("x"), 64<<10)
