@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -144,18 +143,4 @@ func (s *cliSemaphore) capacity() int {
 		return 0
 	}
 	return cap(s.ch)
-}
-
-// writeCLIError turns a runCLI failure into an HTTP response, separating "the
-// server is full" from "the CLI broke".
-//
-// A 503 without a Retry-After is not actionable: a client that retries
-// immediately makes the overload it just hit worse.
-func writeCLIError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errCLIBusy) {
-		w.Header().Set("Retry-After", strconv.Itoa(cliSlotRetryAfter))
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	http.Error(w, err.Error(), http.StatusBadGateway)
 }
