@@ -222,6 +222,9 @@ func serveUntil(ctx context.Context, srv *http.Server, listen func() error, grac
 		return err
 	case <-ctx.Done():
 	}
+	// Logged here, before Shutdown, so it always precedes main's
+	// "shutdown complete"; a goroutine in main lost that race on an idle server.
+	log.Printf("shutdown: signal received, draining for up to %s", grace)
 	sctx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
 	shutdownErr := srv.Shutdown(sctx)
@@ -267,10 +270,6 @@ func main() {
 	log.Printf("bibliovera-web listening on %s (CLI: %s, DB: %s, slots=%d, crossref_polite=%s)", addr, cliBinaryPath(), dbPath(), cliSem.capacity(), polite)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	go func() {
-		<-ctx.Done()
-		log.Printf("shutdown: signal received, draining for up to %s", shutdownGrace)
-	}()
 	if err := serveUntil(ctx, srv, srv.ListenAndServe, shutdownGrace); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
