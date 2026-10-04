@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -154,11 +158,13 @@ func TestCLISemaphoreBoundsChildRuns(t *testing.T) {
 	}
 }
 
-// TestCheckFallsBackWhenBusy pins the /check behaviour under slot exhaustion.
-// Unlike the analytics endpoints, /check must NOT 503: it is a helper lookup in
-// the UI and an error there would break the page. It degrades to the same safe
-// fallback shape it already uses when the checker binary is missing.
-func TestCheckFallsBackWhenBusy(t *testing.T) {
+// TestCheckBusyIs503WithRetryAfter pins the /check behaviour under slot
+// exhaustion. It used to answer 200 with a fallback body, which made a full
+// server look like a successful lookup. It is now a 503 with Retry-After in the
+// same {"error": ...} shape every other error uses; index.html already turns
+// any non-2xx /check into "unverified" (readJSON throws, checkRetractions
+// catches), so the page does not break.
+func TestCheckBusyIs503WithRetryAfter(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "check.log")
 	buildConcurrencyStubCLI(t, logPath, 2*time.Second)
 	t.Setenv("RETRACTION_CHECKER_BIN", os.Getenv("CLI_BIN"))
@@ -173,15 +179,21 @@ func TestCheckFallsBackWhenBusy(t *testing.T) {
 	handleCheck(rec, req)
 	cliSem.release()
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 — /check must degrade, not error", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "busy") {
-		t.Errorf("body = %q, want it to mention busy", strings.TrimSpace(body))
+	ra := rec.Header().Get("Retry-After")
+	if n, err := strconv.Atoi(ra); err != nil || n <= 0 {
+		t.Errorf("Retry-After = %q, want a positive number of seconds", ra)
 	}
-	if !strings.Contains(body, `"retracted":false`) {
-		t.Errorf("body = %q, want the safe fallback shape", strings.TrimSpace(body))
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not JSON: %v", rec.Body.String(), err)
+	}
+	if !strings.Contains(body.Error, "busy") {
+		t.Errorf("error = %q, want it to mention busy", body.Error)
 	}
 }
 
@@ -205,5 +217,220 @@ func TestCLISemaphoreDisabledIsANoOp(t *testing.T) {
 	t.Setenv("CLI_MAX_CONCURRENT", "")
 	if got := cliSlotsFromEnv(); got != defaultCLISlots {
 		t.Errorf("empty env gave %d, want %d", got, defaultCLISlots)
+	}
+}
+
+// TestMain lets the test binary double as the fake CLI: the tests point CLI_BIN
+// at os.Executable() and set FAKE_CLI_MODE, so no shell script or second build
+// is needed.
+func TestMain(m *testing.M) {
+	if mode := os.Getenv("FAKE_CLI_MODE"); mode != "" {
+		runFakeCLI(mode)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// runFakeCLI modes: ok (small JSON), bytes (FAKE_CLI_BYTES of stdout, then
+// sleep FAKE_CLI_SLEEP), secret (secret-looking stderr, exit 1), bigerr (1 MiB
+// of stderr, small JSON, exit 0).
+func runFakeCLI(mode string) {
+	switch mode {
+	case "ok":
+		fmt.Print(`[{"a":1}]`)
+	case "bytes":
+		n, _ := strconv.Atoi(os.Getenv("FAKE_CLI_BYTES"))
+		chunk := bytes.Repeat([]byte("x"), 64<<10)
+		for n > 0 {
+			k := min(n, len(chunk))
+			if _, err := os.Stdout.Write(chunk[:k]); err != nil {
+				os.Exit(3)
+			}
+			n -= k
+		}
+		d, _ := time.ParseDuration(os.Getenv("FAKE_CLI_SLEEP"))
+		time.Sleep(d)
+	case "secret":
+		fmt.Fprint(os.Stderr, "SECRET_PATH /root/x\nsecond line")
+		os.Exit(1)
+	case "bigerr":
+		chunk := bytes.Repeat([]byte("e"), 64<<10)
+		for range 16 {
+			_, _ = os.Stderr.Write(chunk)
+		}
+		fmt.Print(`[]`)
+	}
+}
+
+func useFakeCLI(t *testing.T, mode string) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	t.Setenv("CLI_BIN", exe)
+	t.Setenv("RETRACTION_CHECKER_BIN", exe)
+	t.Setenv("FAKE_CLI_MODE", mode)
+	useSemaphore(t, 4, time.Second)
+}
+
+// captureLog collects what log.Printf writes for the duration of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	return &buf
+}
+
+var cliEndpoints = []struct {
+	name   string
+	h      http.HandlerFunc
+	target string
+}{
+	{"analytics /mesh", handleMesh, "/mesh?org=Oxford"},
+	{"retraction /check", handleCheck, "/check?doi=10.1234/x"},
+}
+
+func serve(h http.HandlerFunc, target string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	return rec
+}
+
+// TestStdoutOverCapIs502AndKillsChild: the child writes cap+1 bytes and then
+// sleeps for 20s. The handler must stop reading, kill it, and answer 502 with a
+// generic body; a handler that waits for the child would take ~20s.
+func TestStdoutOverCapIs502AndKillsChild(t *testing.T) {
+	for _, ep := range cliEndpoints {
+		t.Run(ep.name, func(t *testing.T) {
+			useFakeCLI(t, "bytes")
+			t.Setenv("FAKE_CLI_BYTES", strconv.Itoa(cliStdoutCap+1))
+			t.Setenv("FAKE_CLI_SLEEP", "20s")
+			logs := captureLog(t)
+
+			start := time.Now()
+			rec := serve(ep.h, ep.target)
+			elapsed := time.Since(start)
+
+			if rec.Code != http.StatusBadGateway {
+				t.Errorf("status = %d, want 502", rec.Code)
+			}
+			const want = `{"error":"upstream output too large"}` + "\n"
+			if got := rec.Body.String(); got != want {
+				t.Errorf("body length %d, want %q", len(got), want)
+			}
+			if elapsed > 10*time.Second {
+				t.Errorf("took %v: the child was not killed", elapsed)
+			}
+			if !strings.Contains(logs.String(), "output too large") {
+				t.Errorf("overflow was not logged: %q", logs.String())
+			}
+		})
+	}
+}
+
+// TestCLIStderrNeverReachesClient: stderr text must stay in the server log.
+// Status codes are unchanged: 502 for analytics, the 200 fallback for /check.
+func TestCLIStderrNeverReachesClient(t *testing.T) {
+	cases := []struct {
+		name   string
+		h      http.HandlerFunc
+		target string
+		want   int
+	}{
+		{"analytics /mesh", handleMesh, "/mesh?org=Oxford", http.StatusBadGateway},
+		{"retraction /check", handleCheck, "/check?doi=10.1234/x", http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			useFakeCLI(t, "secret")
+			logs := captureLog(t)
+
+			rec := serve(tc.h, tc.target)
+
+			if rec.Code != tc.want {
+				t.Errorf("status = %d, want %d", rec.Code, tc.want)
+			}
+			if b := rec.Body.String(); strings.Contains(b, "SECRET_PATH") || strings.Contains(b, "/root/x") {
+				t.Errorf("client body leaks stderr: %q", b)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["error"] == nil {
+				t.Errorf("body %q is not a JSON error: %v", rec.Body.String(), err)
+			}
+			l := logs.String()
+			if !strings.Contains(l, "SECRET_PATH /root/x second line") {
+				t.Errorf("stderr missing (or not single-line) in the server log: %q", l)
+			}
+			if !strings.Contains(l, "cmd=") {
+				t.Errorf("log line carries no cmd label: %q", l)
+			}
+		})
+	}
+}
+
+// TestCLIStderrOverCapOnlyTruncates: a chatty stderr must not fail a run that
+// otherwise succeeded, and must not flood the log.
+func TestCLIStderrOverCapOnlyTruncates(t *testing.T) {
+	useFakeCLI(t, "bigerr")
+	logs := captureLog(t)
+
+	rec := serve(handleMesh, "/mesh?org=Oxford")
+
+	if rec.Code != http.StatusOK || rec.Body.String() != "[]" {
+		t.Errorf("got %d %q, want 200 []", rec.Code, rec.Body.String())
+	}
+	if n := logs.Len(); n > 2000 {
+		t.Errorf("log grew by %d bytes for a 1 MiB stderr", n)
+	}
+}
+
+// TestSmallOutputIsUnchanged is the control for the caps: normal output still
+// comes back verbatim with 200.
+func TestSmallOutputIsUnchanged(t *testing.T) {
+	for _, ep := range cliEndpoints {
+		t.Run(ep.name, func(t *testing.T) {
+			useFakeCLI(t, "ok")
+			rec := serve(ep.h, ep.target)
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want 200", rec.Code)
+			}
+			if got, want := rec.Body.String(), `[{"a":1}]`; got != want {
+				t.Errorf("body = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// TestAnalyticsBusyIs503WithRetryAfter: a full slot pool on an analytics
+// endpoint is the server being full, not the CLI breaking. It used to surface
+// as 502 because writeErr treats every unmarked error as an upstream failure.
+// index.html shows a 503 as the "Temporarily unavailable" error card.
+func TestAnalyticsBusyIs503WithRetryAfter(t *testing.T) {
+	useFakeCLI(t, "ok")
+	useSemaphore(t, 1, 150*time.Millisecond)
+
+	if err := cliSem.acquire(context.Background()); err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+	rec := serve(handleMesh, "/mesh?org=Oxford")
+	cliSem.release()
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	ra := rec.Header().Get("Retry-After")
+	if n, err := strconv.Atoi(ra); err != nil || n != cliSlotRetryAfter {
+		t.Errorf("Retry-After = %q, want %d", ra, cliSlotRetryAfter)
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not JSON: %v", rec.Body.String(), err)
+	}
+	if body.Error != errCLIBusy.Error() {
+		t.Errorf("error = %q, want %q", body.Error, errCLIBusy.Error())
 	}
 }
