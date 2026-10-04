@@ -440,7 +440,7 @@ func handleDrift(w http.ResponseWriter, r *http.Request) {
 // handleCurate mirrors GET /curate?topic=&journal=&sort=&limit=.
 // Returns a ranked reading list (title, DOI, year, citations, etc) for a topic,
 // optionally scoped to a single journal. Powers both the Reading List module
-// and the Rising Papers module (which re-ranks the same rows by citations/year).
+// and the Rising Papers module (sort=per-year, ranked by the CLI in SQL).
 func handleCurate(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	topic := strings.TrimSpace(q.Get("topic"))
@@ -455,12 +455,20 @@ func handleCurate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// --data-source local: curate never calls the live OpenAlex API, and
+	// --sort per-year needs the local store.
 	args := []string{"curate", "--topic", topic, "--json", "--db", dbPath(),
-		"--limit", strconv.Itoa(limit)}
+		"--limit", strconv.Itoa(limit), "--data-source", "local"}
 	if j := strings.TrimSpace(q.Get("journal")); j != "" {
 		args = append(args, "--journal", j)
 	}
 	if s := strings.TrimSpace(q.Get("sort")); s != "" {
+		switch s {
+		case "citations", "date", "per-year":
+		default:
+			writeErr(w, badRequest("sort must be citations, date or per-year"))
+			return
+		}
 		args = append(args, "--sort", s)
 	}
 

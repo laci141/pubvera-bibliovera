@@ -1329,41 +1329,15 @@ function readTable(rows,topic){
 }
 
 // ── Rising Papers ───────────────────────────────────────────────────────────
-// /curate caps limit at 100 (handleCurate in main.go), so the candidate pool is
-// two requests for the same topic/filters: the 100 most-cited and the 100
-// most-recent matches, merged and de-duplicated before velocity is computed.
-const RISE_POOL_SIZE=100;
-const RISE_AGE_NOTE="Age is estimated from publication year (mid-year), so cites/year is approximate.";
-let risePoolText="";   // pool + age-method text of the last run, for the note and the exports
-
-// Paper age in years from the publication year alone (no date is available).
-// Earlier years count from 1 July of that year; the current year counts half of
-// the time elapsed since 1 January. Floor 0.25 so a brand-new paper does not
-// divide by ~0. Missing / invalid year -> null (not rankable).
-function estimatePaperAgeYears(year,now){
-  const yr=Number(year);
-  if(!Number.isInteger(yr)||yr<=0)return null;
-  const t=now||new Date(), cur=t.getFullYear();
-  const ms=yr<cur?(t-new Date(yr,6,1)):(t-new Date(cur,0,1))/2;
-  return Math.max(0.25,ms/(365.25*86400000));
-}
-
-// De-duplication key: DOI, or the normalized title when the DOI is empty.
-function risePaperKey(r){
-  const d=paperDOI(r).toLowerCase();
-  if(d)return "doi:"+d;
-  const t=String(r.title||r.display_name||r.name||"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"");
-  return t?"title:"+t:"";
-}
-function mergeRisePools(pools){
-  const seen=new Set(), out=[];
-  pools.forEach(rows=>rows.forEach(r=>{
-    const k=risePaperKey(r);
-    if(k){if(seen.has(k))return;seen.add(k);}
-    out.push(r);
-  }));
-  return out;
-}
+// One /curate request with sort=per-year: the CLI ranks by average citations per
+// year in SQL before its LIMIT. /curate caps limit at 100 (handleCurate in main.go),
+// so we always ask for 100 rows: the min-year / min-citations filters below are
+// client-side (the CLI has no year flag) and need headroom; the slider only
+// limits the rows shown.
+const RISE_REQUEST_LIMIT=100;
+const RISE_METHOD="Ranked by average citations per year since publication (local Lancet mirror). "+
+  "Age = years since the publication date, or 1 July of the publication year if the date is missing; at least 0.25 years.";
+let risePoolText="";   // method text of the last run, for the note and the exports
 
 async function runRise(){
   save();
@@ -1374,39 +1348,30 @@ async function runRise(){
   const limit=Number($("#rise_lim").value);
   const res=$("#rise_res"); res.innerHTML='<span class="spin"></span> Finding rising papers…';
   const runId=startRetractionRun("rise");
-  const ctrl=new AbortController(); retractionCtrl.rise=ctrl;   // a newer run aborts both pool requests
+  const ctrl=new AbortController(); retractionCtrl.rise=ctrl;   // a newer run aborts the request
   const current=()=>runId===retractionRun.rise;
-  const fetchPool=sort=>{
-    const p=new URLSearchParams();
-    p.set("topic",topic); if(j)p.set("journal",j);
-    p.set("sort",sort); p.set("limit",String(RISE_POOL_SIZE));
-    return fetchJSON("/curate?"+p.toString(),ctrl.signal);
-  };
+  const p=new URLSearchParams();
+  p.set("topic",topic); if(j)p.set("journal",j);
+  p.set("sort","per-year"); p.set("limit",String(RISE_REQUEST_LIMIT));
   try{
-    const [byCites,byDate]=await Promise.allSettled([fetchPool("citations"),fetchPool("date")]);
+    const d=await fetchJSON("/curate?"+p.toString(),ctrl.signal);
     if(!current())return;
-    if(byCites.status==="rejected"&&byDate.status==="rejected")throw byCites.reason;
-    const rowsOf=s=>{const d=s.value;return Array.isArray(d)?d:(d.works||d.results||[]);};
+    const rows=Array.isArray(d)?d:(d.works||d.results||[]);
     const notes=[];
-    if(byCites.status==="rejected")notes.push("The most-cited pool could not be loaded; showing the most-recent pool only.");
-    if(byDate.status==="rejected")notes.push("The most-recent pool could not be loaded; showing the most-cited pool only.");
-    const merged=mergeRisePools([byCites,byDate].filter(s=>s.status==="fulfilled").map(rowsOf));
-    risePoolText="Candidate pool: up to "+RISE_POOL_SIZE+" most-cited + "+RISE_POOL_SIZE+
-      " most-recent matches ("+merged.length+" unique). "+RISE_AGE_NOTE;
-    const now=new Date(), minC=Number($("#rise_cites").value);
+    risePoolText=RISE_METHOD+" Min year and min citations are applied to the top "+RISE_REQUEST_LIMIT+" ranked rows.";
+    const minC=Number($("#rise_cites").value);
     let noYear=0;
     const enriched=[];
-    merged.forEach(r=>{
-      const yr=paperYear(r), cites=paperCitations(r);
-      const age=estimatePaperAgeYears(yr,now);
-      if(age===null){noYear++;return;}
-      enriched.push({r,yr,cites,velocity:cites/age});
+    rows.forEach(r=>{
+      const yr=paperYear(r)||Number(String(r.pub_date||"").slice(0,4))||0;
+      if(!(yr>0)){noYear++;return;}
+      const cites=paperCitations(r);
+      enriched.push({r,yr,when:r.pub_date||String(yr),cites,velocity:Number(r.citations_per_year)||0});
     });
-    const ranked=enriched.filter(x=>x.yr>=minYear && x.cites>=minC)
-      .sort((a,b)=>b.velocity-a.velocity).slice(0,limit);
+    const ranked=enriched.filter(x=>x.yr>=minYear && x.cites>=minC).slice(0,limit);
     if(noYear)notes.push(noYear+" paper"+(noYear===1?"":"s")+" without a valid publication year "+
       (noYear===1?"was":"were")+" excluded from the ranking.");
-    lastData.rise=ranked.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,
+    lastData.rise=ranked.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,pub_date:x.r.pub_date||"",
       journal:x.r.journal||x.r.source||"",authors:x.r.authors||"",
       cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10}));
     queryFilters.rise=['topic "'+topic+'"',j||"all journals","from "+minYear]
@@ -1423,7 +1388,7 @@ function riseTable(items,topic,journal,minYear,notes){
   const scope=journal?esc(journal):'all journals';
   let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+' · from '+minYear,
     'rise','bibliovera-rising-papers.json');
-  h+='<table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Year</th>'+
+  h+='<table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
     '<th style="text-align:right">Cites</th><th style="text-align:right">Cites/yr</th><th>Status</th></tr></thead><tbody>';
   items.forEach((x,i)=>{
     const r=x.r, doi=paperDOI(r);
@@ -1431,12 +1396,12 @@ function riseTable(items,topic,journal,minYear,notes){
     const vel='<span class="badge-velocity">'+num(x.velocity)+'</span>';
     const status=doi?'<span class="badge-checking">checking…</span>':'<span class="badge-checking">no DOI</span>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
-      '<td class="n"><span class="year-pill">'+x.yr+'</span></td>'+
+      '<td class="n"><span class="year-pill">'+esc(x.when)+'</span></td>'+
       '<td class="n">'+num(x.cites)+'</td><td class="n">'+vel+'</td>'+
       '<td id="rst-'+i+'">'+status+'</td></tr>';
   });
   h+='</tbody></table>';
-  h+='<p class="note">Cites/yr = total citations ÷ estimated paper age (years). A high value means the paper is accumulating citations fast — a "rising" signal, not just a lifetime total. Retraction status checked live (keyless).</p>';
+  h+='<p class="note">Cites/yr = total citations ÷ paper age (years), computed by the server. A high value means the paper is accumulating citations fast — a "rising" signal, not just a lifetime total. Retraction status checked live (keyless).</p>';
   return h+noteHTML;
 }
 
