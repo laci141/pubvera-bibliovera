@@ -130,6 +130,77 @@ const (
 	srvIdleTimeout = 120 * time.Second
 )
 
+// Caps on what a child CLI may hand back. Vars, not consts, so a test can
+// lower them.
+//
+// Measured 2026-10-04 against the real thelancet-pp-cli on data.db at every
+// endpoint's maximum limit: the largest response was 79,242 bytes
+// (rank-authors --limit 500); mesh 500 = 51,350, affiliation-growth 500 =
+// 63,509, curate 100 = 35,093, drift topN 40 = 9,459. 16 MiB is ~200x that
+// and still small enough that a runaway child cannot exhaust memory.
+//
+// stderr is only ever logged (300 runes at most), so 64 KiB is generous.
+var (
+	cliStdoutCap = 16 << 20
+	cliStderrCap = 64 << 10
+)
+
+// errOutputTooLarge is what the client sees when a CLI exceeds cliStdoutCap.
+// writeErr reports it as 502: the upstream misbehaved, not the client.
+var errOutputTooLarge = errors.New("upstream output too large")
+
+// limitedWriter is a bytes.Buffer with a ceiling. With onOver set (stdout) an
+// overflow cancels the child and fails the write, which also stops exec's copy
+// goroutine from reading. Without it (stderr) the excess is silently dropped
+// and the writer keeps accepting, so a chatty child never blocks on a full pipe.
+type limitedWriter struct {
+	buf    bytes.Buffer
+	max    int
+	over   bool
+	onOver func()
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	room := w.max - w.buf.Len()
+	if len(p) <= room {
+		return w.buf.Write(p)
+	}
+	w.over = true
+	w.buf.Write(p[:room])
+	if w.onOver == nil {
+		return len(p), nil
+	}
+	w.onOver()
+	return 0, errOutputTooLarge
+}
+
+// runCapped runs bin with both output streams capped. cancel must be the cancel
+// func of ctx: it is how a stdout overflow kills the child. A stdout overflow
+// returns errOutputTooLarge; stderr overflow only truncates stderr.
+func runCapped(ctx context.Context, cancel context.CancelFunc, bin string, args []string) (stdout []byte, stderr string, err error) {
+	// #nosec G204 -- callers pass a fixed subcommand; user text is argv, not shell.
+	cmd := exec.CommandContext(ctx, bin, args...)
+	out := &limitedWriter{max: cliStdoutCap, onOver: cancel}
+	errOut := &limitedWriter{max: cliStderrCap}
+	cmd.Stdout = out
+	cmd.Stderr = errOut
+	// A killed child's pipes can stay open through a grandchild; do not let
+	// Wait hang on them.
+	cmd.WaitDelay = 2 * time.Second
+	err = cmd.Run()
+	if out.over {
+		err = errOutputTooLarge
+	}
+	return out.buf.Bytes(), errOut.buf.String(), err
+}
+
+// stderrForLog makes a CLI's stderr safe for one log line. It is for the
+// server log only: stderr can carry file paths and upstream details and is never
+// sent to the client.
+func stderrForLog(s string) string {
+	return truncate(strings.Join(strings.Fields(s), " "), 300)
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleRoot)
@@ -464,18 +535,19 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	label := cliCmdLabel(args)
 
 	// The retraction check shares the same slot pool as the analytics CLI:
-	// both are child processes on the same two cores. On exhaustion it falls
-	// through to the existing safe fallback rather than a 503 — /check is a
-	// helper lookup in the UI, and an error there would break the page.
+	// both are child processes on the same two cores. On exhaustion it answers
+	// 503 with Retry-After. index.html reads any non-2xx /check as "unverified",
+	// so the page does not break; a 200 here made a full server look like a
+	// successful lookup.
 	waitStart := time.Now()
 	err := cliSem.acquire(r.Context())
 	waitMS := time.Since(waitStart).Milliseconds()
 	if err != nil {
 		log.Printf("cli: busy bin=retraction cmd=%s wait_ms=%d err=%v", label, waitMS, err)
-		writeJSONValue(w, map[string]any{
-			"retracted": false,
-			"error":     "retraction checker busy; retry shortly",
-		})
+		w.Header().Set("Retry-After", strconv.Itoa(cliSlotRetryAfter))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "retraction checker busy; retry shortly"})
 		return
 	}
 	defer cliSem.release()
@@ -484,17 +556,16 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), retractionCheckBudget)
 	defer cancel()
 
-	// #nosec G204 -- fixed subcommand; doi/pmid are untrusted but passed safely.
-	cmd := exec.CommandContext(ctx, retractionCheckerBinaryPath(), args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
 	runStart := time.Now()
-	err = cmd.Run()
+	stdout, stderr, err := runCapped(ctx, cancel, retractionCheckerBinaryPath(), args)
 	elapsed := time.Since(runStart).Milliseconds()
+	if errors.Is(err, errOutputTooLarge) {
+		log.Printf("cli: fail bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d err=%v (cap %d bytes), child killed", label, waitMS, elapsed, err, cliStdoutCap)
+		writeErr(w, err)
+		return
+	}
 	if err != nil {
-		log.Printf("cli: fail bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d err=%v", label, waitMS, elapsed, err)
+		log.Printf("cli: fail bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d err=%v — stderr: %s", label, waitMS, elapsed, err, stderrForLog(stderr))
 		// If retraction-checker is not found or fails, return a safe fallback.
 		writeJSONValue(w, map[string]any{
 			"retracted": false,
@@ -503,7 +574,7 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw := bytes.TrimSpace(stdout.Bytes())
+	raw := bytes.TrimSpace(stdout)
 	if !json.Valid(raw) {
 		log.Printf("cli: fail bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d err=non-json bytes=%d", label, waitMS, elapsed, len(raw))
 		writeJSONValue(w, map[string]any{
@@ -518,8 +589,8 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	// same way. All of them happen while the command goes on to succeed, so
 	// logging stderr only on failure discarded exactly the warnings that arrive
 	// early enough to act on. Operator information — never sent to the client.
-	if w := strings.TrimSpace(stderr.String()); w != "" {
-		log.Printf("cli: ok bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d — stderr: %s", label, waitMS, elapsed, len(raw), truncate(w, 300))
+	if w := stderrForLog(stderr); w != "" {
+		log.Printf("cli: ok bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d — stderr: %s", label, waitMS, elapsed, len(raw), w)
 	} else {
 		log.Printf("cli: ok bin=retraction cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d", label, waitMS, elapsed, len(raw))
 	}
@@ -620,24 +691,20 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(parent, analyticsBudget)
 	defer cancel()
-	// #nosec G204 -- fixed subcommand + whitelisted flags with values passed as
-	// discrete argv elements (no shell); ints are range-checked above.
-	cmd := exec.CommandContext(ctx, cliBinaryPath(), args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
 	runStart := time.Now()
-	err = cmd.Run()
+	stdout, stderr, err := runCapped(ctx, cancel, cliBinaryPath(), args)
 	elapsed := time.Since(runStart).Milliseconds()
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=%v", label, waitMS, elapsed, msg)
-		return nil, fmt.Errorf("analytics failed: %s", msg)
+	if errors.Is(err, errOutputTooLarge) {
+		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=%v (cap %d bytes), child killed", label, waitMS, elapsed, err, cliStdoutCap)
+		return nil, err
 	}
-	raw := bytes.TrimSpace(stdout.Bytes())
+	if err != nil {
+		// The client gets a fixed message: stderr (and err, which can name a
+		// path) are for the log only.
+		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=%v — stderr: %s", label, waitMS, elapsed, err, stderrForLog(stderr))
+		return nil, errors.New("analytics failed")
+	}
+	raw := bytes.TrimSpace(stdout)
 	if !json.Valid(raw) {
 		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=non-json bytes=%d", label, waitMS, elapsed, len(raw))
 		return nil, errors.New("CLI returned non-JSON output")
@@ -648,8 +715,8 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 	// same way. All of them happen while the command goes on to succeed, so
 	// logging stderr only on failure discarded exactly the warnings that arrive
 	// early enough to act on. Operator information — never sent to the client.
-	if w := strings.TrimSpace(stderr.String()); w != "" {
-		log.Printf("cli: ok bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d — stderr: %s", label, waitMS, elapsed, len(raw), truncate(w, 300))
+	if w := stderrForLog(stderr); w != "" {
+		log.Printf("cli: ok bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d — stderr: %s", label, waitMS, elapsed, len(raw), w)
 	} else {
 		log.Printf("cli: ok bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d", label, waitMS, elapsed, len(raw))
 	}
@@ -689,6 +756,12 @@ func writeErr(w http.ResponseWriter, err error) {
 	var bre badRequestError
 	if errors.As(err, &bre) {
 		status = http.StatusBadRequest
+	} else if errors.Is(err, errCLIBusy) {
+		// A full slot pool is the server being busy, not the CLI breaking: the
+		// same request will work shortly. A 503 without Retry-After is not
+		// actionable, so the header is sent with it.
+		status = http.StatusServiceUnavailable
+		w.Header().Set("Retry-After", strconv.Itoa(cliSlotRetryAfter))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
