@@ -151,13 +151,13 @@ function setForm() {
   byId("rise_lim").value = "15";
 
   // ── Test D: client-side min year and min citations ──
-  byId("rise_year").value = "2012";
+  byId("rise_year_n").value = "2012";
   await run("runRise()"); await tick();
   check("D: min year drops older rows (" + dois().join(",") + ")", dois().join(",") === "10.1/hot,10.1/mid");
-  byId("rise_year").value = "2000"; byId("rise_cites").value = "100";
+  byId("rise_year_n").value = "2000"; byId("rise_cites_n").value = "100";
   await run("runRise()"); await tick();
   check("D: min citations drops low-cited rows (" + dois().join(",") + ")", dois().join(",") === "10.1/mid,10.1/cold");
-  byId("rise_cites").value = "0";
+  byId("rise_cites_n").value = "";
 
   // ── Test E: failure -> the existing error path ──
   curateHandler = () => Promise.reject(new Error("curate down"));
