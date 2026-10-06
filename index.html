@@ -146,6 +146,10 @@
   select option{background:#1a1a2e}
   input[type=range]{width:100%;accent-color:var(--c)}
   .val{font-variant-numeric:tabular-nums;color:#fff;font-weight:700}
+  /* Slider + numeric field on one line; the field is a narrow input[type=text]. */
+  .numpair{display:flex;align-items:center;gap:.7rem}
+  .numpair input[type=range]{flex:1;min-width:0}
+  .numpair input[type=text]{width:5.5rem;flex:none;text-align:right;font-variant-numeric:tabular-nums}
   .row2{display:flex;gap:1rem}
   .row2>div{flex:1}
   .btn{background:linear-gradient(90deg,#00d4ff,#7c3aed);border:none;color:#000;padding:.7rem 2rem;border-radius:.5rem;
@@ -225,7 +229,7 @@
   .badge-concern{background:rgba(255,190,80,.15);color:#ffd28a;border:1px solid rgba(255,190,80,.35);
     padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:700;white-space:nowrap}
   .concern-also{color:#ffd28a;font-size:.72rem;margin-top:2px}
-  .concern-link{color:#ffd28a;font-size:.72rem;margin-left:.4em;text-decoration:underline}
+  .concern-link{color:#ffd28a;font-size:.72rem;margin-left:.4em;text-decoration:underline;white-space:nowrap}
 
   /* Rising Papers — velocity badge (citations per year) */
   .badge-velocity{background:rgba(56,189,248,.18);color:#7dd3fc;border:1px solid rgba(56,189,248,.40);
@@ -516,12 +520,20 @@
   </div>
   <div class="row2">
     <div>
-      <label>Min year · <span class="val" id="read_year_v">2005 (all)</span></label>
-      <input type="range" id="read_year" min="2005" max="2026" value="2005" oninput="read_year_v.textContent=this.value==='2005'?'2005 (all)':this.value">
+      <label for="read_year_n">Min year · <span class="val" id="read_year_v">Any</span></label>
+      <div class="numpair">
+        <input type="range" id="read_year" min="2005" max="2026" value="2005" aria-label="Min year slider" oninput="numFromSlider('read_year')">
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="read_year_n" placeholder="Any" aria-describedby="read_year_n_msg">
+      </div>
+      <div class="lenmsg err" id="read_year_n_msg" aria-live="polite"></div>
     </div>
     <div>
-      <label>Min citations · <span class="val" id="read_cites_v">0 (all)</span></label>
-      <input type="range" id="read_cites" min="0" max="500" step="10" value="0" oninput="read_cites_v.textContent=this.value==='0'?'0 (all)':this.value">
+      <label for="read_cites_n">Min citations · <span class="val" id="read_cites_v">Any</span></label>
+      <div class="numpair">
+        <input type="range" id="read_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" oninput="numFromSlider('read_cites')">
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="read_cites_n" placeholder="Any" aria-describedby="read_cites_n_msg">
+      </div>
+      <div class="lenmsg err" id="read_cites_n_msg" aria-live="polite"></div>
     </div>
   </div>
   <button class="btn" onclick="runRead()">Build Reading List</button>
@@ -554,12 +566,20 @@
   </div>
   <div class="row2">
     <div>
-      <label>Min year (only papers from this year on) · <span class="val" id="rise_year_v">2018</span></label>
-      <input type="range" id="rise_year" min="2005" max="2024" value="2018" oninput="rise_year_v.textContent=this.value">
+      <label for="rise_year_n">Min year (only papers from this year on) · <span class="val" id="rise_year_v">2018</span></label>
+      <div class="numpair">
+        <input type="range" id="rise_year" min="2005" max="2024" value="2018" aria-label="Min year slider" oninput="numFromSlider('rise_year')">
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="rise_year_n" value="2018" placeholder="Any" aria-describedby="rise_year_n_msg">
+      </div>
+      <div class="lenmsg err" id="rise_year_n_msg" aria-live="polite"></div>
     </div>
     <div>
-      <label>Min citations · <span class="val" id="rise_cites_v">0 (all)</span></label>
-      <input type="range" id="rise_cites" min="0" max="500" step="10" value="0" oninput="rise_cites_v.textContent=this.value==='0'?'0 (all)':this.value">
+      <label for="rise_cites_n">Min citations · <span class="val" id="rise_cites_v">Any</span></label>
+      <div class="numpair">
+        <input type="range" id="rise_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" oninput="numFromSlider('rise_cites')">
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="rise_cites_n" placeholder="Any" aria-describedby="rise_cites_n_msg">
+      </div>
+      <div class="lenmsg err" id="rise_cites_n_msg" aria-live="polite"></div>
     </div>
   </div>
   <button class="btn" onclick="runRise()">Find Rising Papers</button>
@@ -635,6 +655,75 @@ Object.keys(LENGTH_FIELDS).forEach(id=>{
   });
   input.addEventListener("blur",()=>{clearTimeout(timer);showLength(id);});
 });
+
+// ── Min year / Min citations: slider + numeric field ──
+// The FIELD is the source of truth for the filter: empty = no filter ("Any"). The
+// slider is a shortcut: its minimum writes an empty field, and a typed value moves it
+// (clamped to the slider range, for its position only). Same message / aria pattern
+// and debounce as the length hints above.
+const NUM_LIMITS={
+  year:{min:1800,max:CUR_YEAR,message:"Enter a year between 1800 and "+CUR_YEAR},
+  cites:{min:0,max:10000000,message:"Enter a whole number between 0 and 10000000"}};
+const NUM_FIELDS={read_year:"year",read_cites:"cites",rise_year:"year",rise_cites:"cites"};
+function checkNumber(kind,value){
+  const s=String(value==null?"":value).trim(), lim=NUM_LIMITS[kind];
+  if(!s)return {valid:true,n:null,message:""};
+  const n=/^[0-9]+$/.test(s)?Number(s):NaN;
+  if(!(n>=lim.min&&n<=lim.max))return {valid:false,n:null,message:lim.message};
+  return {valid:true,n,message:""};
+}
+function showNumber(id){
+  const input=$("#"+id+"_n"), r=checkNumber(NUM_FIELDS[id],input.value);
+  $("#"+id+"_n_msg").textContent=r.message;
+  if(typeof input.setAttribute==="function"){
+    if(r.valid)input.removeAttribute("aria-invalid"); else input.setAttribute("aria-invalid","true");
+  }
+  return r.valid;
+}
+// False (and focus on the first invalid field) when a listed field is invalid.
+function numbersOk(ids){
+  const bad=ids.filter(id=>!showNumber(id));
+  if(bad.length)$("#"+bad[0]+"_n").focus();
+  return !bad.length;
+}
+// The filter value of a field: a number, or null for "no filter". Call after numbersOk.
+function numValue(id){return checkNumber(NUM_FIELDS[id],$("#"+id+"_n").value).n;}
+function setNumLabel(id,n){$("#"+id+"_v").textContent=n==null?"Any":String(n);}
+function numFromSlider(id){
+  const slider=$("#"+id), field=$("#"+id+"_n");
+  field.value=Number(slider.value)<=Number(slider.min)?"":String(slider.value);
+  setNumLabel(id,numValue(id));
+  showNumber(id);
+}
+function numFromField(id){
+  const r=checkNumber(NUM_FIELDS[id],$("#"+id+"_n").value);
+  if(!r.valid)return;
+  const slider=$("#"+id);
+  slider.value=String(r.n==null?slider.min:Math.min(Math.max(r.n,Number(slider.min)),Number(slider.max)));
+  setNumLabel(id,r.n);
+}
+Object.keys(NUM_FIELDS).forEach(id=>{
+  const input=$("#"+id+"_n"); let timer=null;
+  if(!input||typeof input.addEventListener!=="function")return;
+  input.addEventListener("input",()=>{
+    clearTimeout(timer);
+    numFromField(id);
+    if(checkNumber(NUM_FIELDS[id],input.value).valid)showNumber(id);
+    else timer=setTimeout(()=>showNumber(id),600);
+  });
+  input.addEventListener("blur",()=>{clearTimeout(timer);showNumber(id);});
+});
+// Saved state: the new key holds the field text ("" = Any). The old key held the slider
+// value, where the slider minimum meant "no filter".
+function restoreNum(id,saved,legacy){
+  const slider=$("#"+id);
+  let v=null;
+  if(typeof saved==="string")v=saved;
+  else if(typeof legacy==="string")v=legacy===String(slider.min)?"":legacy;
+  if(v===null||!checkNumber(NUM_FIELDS[id],v).valid)return;
+  $("#"+id+"_n").value=v;
+  numFromField(id);
+}
 
 // Raw JSON data of the last queries, per module — for the JSON button.
 // /check runs the retraction-checker CLI, which queries Crossref (main.go, cli-src-retraction).
@@ -1017,9 +1106,9 @@ function setW2(y){y=Number(y);$("#drift_w2_v").textContent=y+"–"+(y+4);}
   if(s.djournal)$("#drift_journal").value=s.djournal;
   if(s.rtopic)$("#read_topic").value=s.rtopic;
   if(s.ritopic)$("#rise_topic").value=s.ritopic;
-  if(s.ryear){$("#read_year").value=s.ryear;$("#read_year_v").textContent=s.ryear==="2005"?"2005 (all)":s.ryear;}
-  if(s.rcites){$("#read_cites").value=s.rcites;$("#read_cites_v").textContent=s.rcites==="0"?"0 (all)":s.rcites;}
-  if(s.ricites){$("#rise_cites").value=s.ricites;$("#rise_cites_v").textContent=s.ricites==="0"?"0 (all)":s.ricites;}
+  restoreNum("read_year",s.ryear_n,s.ryear);
+  restoreNum("read_cites",s.rcites_n,s.rcites);
+  restoreNum("rise_cites",s.ricites_n,s.ricites);
   if(s.rijournal)$("#rise_journal").value=s.rijournal;
   if(s.morg)$("#mesh_org").value=s.morg;
 }catch(e){}})();
@@ -1028,7 +1117,7 @@ function save(){localStorage.setItem("bibliovera_form",JSON.stringify({
   minp:$("#aff_minp").value,inst:$("#auth_inst").value,minw:$("#auth_minw").value,alim:$("#auth_lim").value,
   djournal:$("#drift_journal").value,rtopic:$("#read_topic").value,
   ritopic:$("#rise_topic").value,rijournal:$("#rise_journal").value,
-  ryear:$("#read_year").value,rcites:$("#read_cites").value,ricites:$("#rise_cites").value,
+  ryear_n:$("#read_year_n").value,rcites_n:$("#read_cites_n").value,ricites_n:$("#rise_cites_n").value,
   morg:$("#mesh_org").value}));}
 
 function openModal(k){$("#"+k+"Modal").classList.add("active");}
@@ -1331,7 +1420,7 @@ function startRetractionRun(mod){
 
 async function runRead(){
   save();
-  if(!lengthsOk(["read_topic"]))return;
+  if(!lengthsOk(["read_topic"])||!numbersOk(["read_year","read_cites"]))return;
   const topic=$("#read_topic").value.trim();
   if(!topic){$("#read_res").innerHTML='<p class="err">Please enter a topic.</p>';return;}
   const p=new URLSearchParams();
@@ -1341,13 +1430,13 @@ async function runRead(){
   try{
     const data=await fetchJSON("/curate?"+p.toString());
     let rows=Array.isArray(data)?data:(data.works||data.results||[]);
-    const minY=Number($("#read_year").value), minC=Number($("#read_cites").value);
-    if(minY>2005||minC>0){
-      rows=rows.filter(r=>(minY<=2005||paperYear(r)>=minY)&&(paperCitations(r)>=minC));
+    const minY=numValue("read_year"), minC=numValue("read_cites")||0;   // minY null = no year filter
+    if(minY!==null||minC>0){
+      rows=rows.filter(r=>(minY===null||paperYear(r)>=minY)&&(paperCitations(r)>=minC));
     }
     lastData.read=rows;
     queryFilters.read=['topic "'+topic+'"',"sort "+p.get("sort"),"limit "+p.get("limit")]
-      .concat(minY>2005?["from "+minY]:[],minC>0?["min "+minC+" citations"]:[]);
+      .concat(minY!==null?["from "+minY]:[],minC>0?["min "+minC+" citations"]:[]);
     res.innerHTML=readTable(rows,topic);
     updateQcount(res);
     checkRetractions(rows,rows,"st-","read",runId);
@@ -1393,10 +1482,10 @@ let risePoolText="";   // method text of the last run, for the note and the expo
 
 async function runRise(){
   save();
-  if(!lengthsOk(["rise_topic"]))return;
+  if(!lengthsOk(["rise_topic"])||!numbersOk(["rise_year","rise_cites"]))return;
   const topic=$("#rise_topic").value.trim();
   if(!topic){$("#rise_res").innerHTML='<p class="err">Please enter a topic.</p>';return;}
-  const minYear=Number($("#rise_year").value);
+  const minYear=numValue("rise_year");   // null = no year filter
   const j=$("#rise_journal").value;
   const limit=Number($("#rise_lim").value);
   const res=$("#rise_res"); res.innerHTML='<span class="spin"></span> Finding rising papers…';
@@ -1412,7 +1501,7 @@ async function runRise(){
     const rows=Array.isArray(d)?d:(d.works||d.results||[]);
     const notes=[];
     risePoolText=RISE_METHOD+" Min year and min citations are applied to the top "+RISE_REQUEST_LIMIT+" ranked rows.";
-    const minC=Number($("#rise_cites").value);
+    const minC=numValue("rise_cites")||0;
     let noYear=0;
     const enriched=[];
     rows.forEach(r=>{
@@ -1421,14 +1510,14 @@ async function runRise(){
       const cites=paperCitations(r);
       enriched.push({r,yr,when:r.pub_date||String(yr),cites,velocity:Number(r.citations_per_year)||0});
     });
-    const ranked=enriched.filter(x=>x.yr>=minYear && x.cites>=minC).slice(0,limit);
+    const ranked=enriched.filter(x=>(minYear===null||x.yr>=minYear) && x.cites>=minC).slice(0,limit);
     if(noYear)notes.push(noYear+" paper"+(noYear===1?"":"s")+" without a valid publication year "+
       (noYear===1?"was":"were")+" excluded from the ranking.");
     lastData.rise=ranked.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,pub_date:x.r.pub_date||"",
       journal:x.r.journal||x.r.source||"",authors:x.r.authors||"",
       cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10}));
-    queryFilters.rise=['topic "'+topic+'"',j||"all journals","from "+minYear]
-      .concat(minC>0?["min "+minC+" citations"]:[],["limit "+limit]);
+    queryFilters.rise=['topic "'+topic+'"',j||"all journals"].concat(minYear!==null?["from "+minYear]:[],
+      minC>0?["min "+minC+" citations"]:[],["limit "+limit]);
     res.innerHTML=riseTable(ranked,topic,j,minYear,notes.concat([risePoolText]));
     updateQcount(res);
     checkRetractions(ranked.map(x=>x.r),lastData.rise,"rst-","rise",runId);
@@ -1436,10 +1525,10 @@ async function runRise(){
 }
 function riseTable(items,topic,journal,minYear,notes){
   const noteHTML=(notes||[]).map(n=>'<p class="note">'+esc(n)+'</p>').join("");
-  if(!items.length) return '<p class="meta">No papers from '+minYear+' on for "'+esc(topic)+'"'+
-    (journal?' in '+esc(journal):'')+'. Try a lower min year or a broader topic.</p>'+noteHTML;
+  if(!items.length) return '<p class="meta">No papers '+(minYear===null?'':'from '+minYear+' on ')+'for "'+esc(topic)+'"'+
+    (journal?' in '+esc(journal):'')+'. Try '+(minYear===null?'a broader topic':'a lower min year or a broader topic')+'.</p>'+noteHTML;
   const scope=journal?esc(journal):'all journals';
-  let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+' · from '+minYear,
+  let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+(minYear===null?'':' · from '+minYear),
     'rise','bibliovera-rising-papers.json');
   h+='<table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
     '<th style="text-align:right">Cites</th><th style="text-align:right">Cites/yr</th><th>Status</th></tr></thead><tbody>';

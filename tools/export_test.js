@@ -190,7 +190,7 @@ function parseCSV(text) {
   byId("read_topic").value = "gene therapy";
   byId("read_sort").value = "citations";
   byId("read_lim").value = "15";
-  byId("read_year").value = "2010";
+  byId("read_year_n").value = "2010";
   byId("read_cites").value = "0";
   await run("runRead()");
   run('downloadJSON("read","r.json")');
