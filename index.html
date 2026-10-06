@@ -220,6 +220,12 @@
   .badge-ok{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.30);
     padding:2px 10px;border-radius:999px;font-size:.72rem;font-weight:600;white-space:nowrap}
   .badge-checking{color:#889;font-size:.72rem;font-style:italic}
+  /* Expression of concern: amber, the .badge-low palette. #ffd28a on the badge
+     fill (rgba(255,190,80,.15) over the #0b1020 page) is ~10:1, ~7.4:1 on a lighter glass panel. */
+  .badge-concern{background:rgba(255,190,80,.15);color:#ffd28a;border:1px solid rgba(255,190,80,.35);
+    padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:700;white-space:nowrap}
+  .concern-also{color:#ffd28a;font-size:.72rem;margin-top:2px}
+  .concern-link{color:#ffd28a;font-size:.72rem;margin-left:.4em;text-decoration:underline}
 
   /* Rising Papers — velocity badge (citations per year) */
   .badge-velocity{background:rgba(56,189,248,.18);color:#7dd3fc;border:1px solid rgba(56,189,248,.40);
@@ -1933,7 +1939,47 @@ function drawMeshGraph(pairs){
 // papers: the objects paperDOI() reads; store: the row objects the exports
 // read, same index. Result is kept on the store row as retraction_status
 // (retracted | no_retraction_found | unverified | no_doi) and
-// retraction_checked_at (ISO 8601 UTC, empty until a check has finished).
+// retraction_checked_at (ISO 8601 UTC, empty until a check has finished), then
+// expression_of_concern / concern_date / concern_notice_doi (empty until a check
+// has answered; retraction_status itself never changes for a concern).
+// Expression of concern from /check: only expression_of_concern === true counts;
+// the concern_* keys are absent (not false) when there is none. The notice link
+// is concern_notice_url, else https://doi.org/<concern_notice_doi>, and only
+// http(s) is ever linked.
+function safeHttpUrl(u){
+  return (typeof u==="string"&&/^https?:\/\//i.test(u.trim()))?u.trim():"";
+}
+function concernNoticeUrl(res){
+  return safeHttpUrl(res.concern_notice_url)||
+    (typeof res.concern_notice_doi==="string"&&res.concern_notice_doi.trim()
+      ?safeHttpUrl("https://doi.org/"+encodeURI(res.concern_notice_doi.trim())):"");
+}
+function concernLinkHTML(res){
+  const u=concernNoticeUrl(res);
+  return u?'<a class="alink concern-link" href="'+esc(u)+'" target="_blank" rel="noopener noreferrer">notice</a>':"";
+}
+function concernDate(res){return typeof res.concern_date==="string"?res.concern_date.trim():"";}
+// Status cell for a finished /check result: retracted > concern > no retraction found.
+function statusBadgeHTML(res){
+  const concern=!!res&&res.expression_of_concern===true;
+  const date=concern?concernDate(res):"";
+  if(res&&res.retracted===true){
+    let h='<span class="badge-retracted">⚠️ RETRACTED</span>';
+    if(concern)h+='<div class="concern-also">Also: expression of concern'+(date?' ('+esc(date)+')':'')+concernLinkHTML(res)+'</div>';
+    return h;
+  }
+  if(concern)return '<span class="badge-concern">⚠ Expression of concern'+(date?' · '+esc(date):'')+'</span>'+concernLinkHTML(res);
+  return '<span class="badge-ok">✓ No retraction found</span>';
+}
+// Export columns that follow retraction_checked_at; empty until a check has answered.
+function concernFields(res){
+  const concern=res.expression_of_concern===true;
+  return {
+    expression_of_concern:concern,
+    concern_date:concern?concernDate(res):"",
+    concern_notice_doi:concern&&typeof res.concern_notice_doi==="string"?res.concern_notice_doi.trim():""
+  };
+}
 async function checkRetractions(papers,store,prefix,mod,runId){
   const current=()=>runId===retractionRun[mod];
   if(!current())return;
@@ -1944,12 +1990,18 @@ async function checkRetractions(papers,store,prefix,mod,runId){
     if(!row||typeof row!=="object")return;
     row.retraction_status=queue[i].doi?"unverified":"no_doi";
     row.retraction_checked_at="";
+    row.expression_of_concern="";
+    row.concern_date="";
+    row.concern_notice_doi="";
   });
   const todo=queue.filter(x=>x.doi);
-  const finish=(i,status,html)=>{
+  const finish=(i,status,html,concern)=>{
     if(!current())return;
     const row=store[i];
-    if(row&&typeof row==="object"){row.retraction_status=status;row.retraction_checked_at=new Date().toISOString();}
+    if(row&&typeof row==="object"){
+      row.retraction_status=status;row.retraction_checked_at=new Date().toISOString();
+      if(concern)Object.assign(row,concern);
+    }
     const cell=$("#"+prefix+i); if(cell)cell.innerHTML=html;
   };
   let active=0, idx=0;
@@ -1961,11 +2013,11 @@ async function checkRetractions(papers,store,prefix,mod,runId){
         fetchJSONTimeout("/check?doi="+encodeURIComponent(doi),20000,signal)
           .then(res=>{
             if(res && res.retracted===true){
-              finish(i,"retracted",'<span class="badge-retracted">⚠️ RETRACTED</span>');
+              finish(i,"retracted",statusBadgeHTML(res),concernFields(res));
             }else if(res && res.error){
               finish(i,"unverified",'<span class="badge-checking">unverified</span>');
             }else{
-              finish(i,"no_retraction_found",'<span class="badge-ok">✓ No retraction found</span>');
+              finish(i,"no_retraction_found",statusBadgeHTML(res||{}),concernFields(res||{}));
             }
           })
           .catch(()=>finish(i,"unverified",'<span class="badge-checking">unverified</span>'))
