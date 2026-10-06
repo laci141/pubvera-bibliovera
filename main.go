@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"net/url"
@@ -833,7 +834,115 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 	} else {
 		log.Printf("cli: ok bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d", label, waitMS, elapsed, len(raw))
 	}
-	return raw, nil
+	return decodeEntities(raw), nil
+}
+
+// entityFields are the display-text keys the CLI can return with HTML
+// entities already in them (the mirror stores titles as the publisher sent
+// them, e.g. "Bile Acid &amp; Tryptophan"). Identifiers such as doi, author_id
+// and every non-string value are left alone.
+var entityFields = map[string]bool{
+	"title": true, "display_name": true, "journal": true, "source": true,
+	"topic": true, "author_name": true, "institution": true,
+	"author_a": true, "author_b": true,
+}
+
+// decodeEntities returns raw with html.UnescapeString applied exactly once to
+// every string under an entityFields key. The JSON is returned byte for byte
+// when it has no ampersand (Go's encoder writes it as a backslash-u0026 escape), cannot be
+// decoded, or nothing changed. Numbers keep their exact text (UseNumber), and
+// object keys keep the order the CLI wrote them in: index.html builds the
+// CSV/Excel columns from the row keys in order, so a re-marshalled map (sorted
+// keys) would move "title" out of the first column.
+// The page escapes every one of these fields before it renders, so "<b>" that
+// comes out of a decoded "&lt;b&gt;" is still shown as text.
+func decodeEntities(raw []byte) []byte {
+	// jsonAmp is a backslash followed by u0026: how Go's JSON encoder writes &.
+	jsonAmp := []byte("\\" + "u0026")
+	if !bytes.Contains(raw, []byte("&")) && !bytes.Contains(raw, jsonAmp) {
+		return raw
+	}
+	// One frame per open container; the walk writes every token back in order.
+	type frame struct {
+		obj     bool
+		wantKey bool
+		key     string
+		n       int
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var out bytes.Buffer
+	var stack []frame
+	changed := false
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return raw
+		}
+		if d, ok := tok.(json.Delim); ok && (d == '}' || d == ']') {
+			stack = stack[:len(stack)-1]
+			out.WriteByte(byte(d))
+		} else {
+			var top *frame
+			if n := len(stack); n > 0 {
+				top = &stack[n-1]
+			}
+			if top != nil && top.obj && top.wantKey {
+				key, ok := tok.(string)
+				if !ok {
+					return raw
+				}
+				if top.n > 0 {
+					out.WriteByte(',')
+				}
+				top.n++
+				top.key, top.wantKey = key, false
+				kb, _ := json.Marshal(key)
+				out.Write(kb)
+				out.WriteByte(':')
+				continue
+			}
+			if top != nil && !top.obj {
+				if top.n > 0 {
+					out.WriteByte(',')
+				}
+				top.n++
+			}
+			switch v := tok.(type) {
+			case json.Delim:
+				stack = append(stack, frame{obj: v == '{', wantKey: v == '{'})
+				out.WriteByte(byte(v))
+				continue
+			case string:
+				if top != nil && top.obj && entityFields[top.key] {
+					if u := html.UnescapeString(v); u != v {
+						v, changed = u, true
+					}
+				}
+				sb, _ := json.Marshal(v)
+				out.Write(sb)
+			case json.Number:
+				out.WriteString(v.String())
+			case bool:
+				out.WriteString(strconv.FormatBool(v))
+			default: // null
+				out.WriteString("null")
+			}
+			if top != nil && top.obj {
+				top.wantKey = true
+			}
+		}
+		if len(stack) == 0 {
+			break
+		}
+		if top := &stack[len(stack)-1]; top.obj {
+			top.wantKey = true
+		}
+	}
+	if !changed {
+		return raw
+	}
+	return out.Bytes()
 }
 
 func writeRaw(w http.ResponseWriter, raw []byte) {

@@ -238,6 +238,9 @@ func runFakeCLI(mode string) {
 	switch mode {
 	case "ok":
 		fmt.Print(`[{"a":1}]`)
+	case "json":
+		// Print FAKE_CLI_JSON verbatim as the CLI's stdout.
+		fmt.Print(os.Getenv("FAKE_CLI_JSON"))
 	case "args":
 		// Echo the CLI arguments back as the JSON body so a test can assert them.
 		b, _ := json.Marshal(os.Args[1:])
