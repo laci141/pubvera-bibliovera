@@ -181,6 +181,9 @@
     border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
   @keyframes spin{to{transform:rotate(360deg)}}
   .err{color:#ffb3b3}
+  .lenmsg{min-height:0;font-size:.8em;margin:.2rem 0 0}
+  .lenmsg:empty{display:none}
+  input[aria-invalid="true"]{border-color:#ffb3b3}
   /* Auth and quota rejections get a card instead of the one-line .err
      paragraph: they carry a heading, an explanation and — for a signed-out
      visitor — a sign-in button. Same glass recipe as .card, so nothing new is
@@ -440,7 +443,8 @@
 <div class="modal" id="authModal"><div class="mc" style="--c:#7c3aed">
   <div class="mh"><h2>✍️ Author Rankings</h2><button class="x" onclick="closeModal('auth')">&times;</button></div>
   <label>Institution (substring, optional)</label>
-  <input type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
+  <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
+  <div class="lenmsg err" id="auth_inst_msg" aria-live="polite"></div>
   <label>Journal (optional)</label>
   <select id="auth_journal">
     <option value="">All Lancet journals</option>
@@ -489,7 +493,8 @@
 <div class="modal" id="readModal"><div class="mc" style="--c:#38bdf8">
   <div class="mh"><h2>📚 Reading List</h2><button class="x" onclick="closeModal('read')">&times;</button></div>
   <label>Topic / keyword</label>
-  <input type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
+  <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
+  <div class="lenmsg err" id="read_topic_msg" aria-live="polite"></div>
   <div class="row2">
     <div>
       <label>Sort by</label>
@@ -521,7 +526,8 @@
 <div class="modal" id="riseModal"><div class="mc" style="--c:#f59e0b">
   <div class="mh"><h2>🚀 Rising Papers</h2><button class="x" onclick="closeModal('rise')">&times;</button></div>
   <label>Topic / keyword</label>
-  <input type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
+  <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
+  <div class="lenmsg err" id="rise_topic_msg" aria-live="polite"></div>
   <div class="row2">
     <div>
       <label>Journal (optional — A: all, B: one)</label>
@@ -558,7 +564,8 @@
 <div class="modal" id="meshModal"><div class="mc" style="--c:#ec4899">
   <div class="mh"><h2>🕸️ Collaboration Network</h2><button class="x" onclick="closeModal('mesh')">&times;</button></div>
   <label>Institution</label>
-  <input type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
+  <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
+  <div class="lenmsg err" id="mesh_org_msg" aria-live="polite"></div>
   <label>Max co-authorship pairs · <span class="val" id="mesh_lim_v">40</span></label>
   <input type="range" id="mesh_lim" min="10" max="500" step="10" value="40" oninput="mesh_lim_v.textContent=this.value">
   <button class="btn" onclick="runMesh()">Map Network</button>
@@ -585,6 +592,43 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=n=>(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:1});
 const CUR_YEAR=new Date().getFullYear();
+
+// ── Field length limits ──
+// Mirror of the server's text-param limits in main.go (maxNameChars): the server
+// answers 400 over them. Counted in runes after trimming, like textParam. Keep in
+// sync: tools/limits_test.js fails when these drift from main.go.
+const FIELD_LIMITS={topic:200,institution:200,org:200};
+function checkLength(param,value){
+  const over=Math.max(0,[...String(value==null?"":value).trim()].length-FIELD_LIMITS[param]);
+  const message=over?over+(over===1?" character":" characters")+" too many (max "+FIELD_LIMITS[param]+")":"";
+  return {over,message};
+}
+// ── end field length limits ──
+const LENGTH_FIELDS={auth_inst:"institution",read_topic:"topic",rise_topic:"topic",mesh_org:"org"};
+function showLength(id){
+  const input=$("#"+id), r=checkLength(LENGTH_FIELDS[id],input.value);
+  $("#"+id+"_msg").textContent=r.message;
+  if(typeof input.setAttribute==="function"){
+    if(r.over)input.setAttribute("aria-invalid","true"); else input.removeAttribute("aria-invalid");
+  }
+  return r.over===0;
+}
+// False (and focus on the first over-limit input) when a listed field is too long.
+function lengthsOk(ids){
+  const bad=ids.filter(id=>!showLength(id));
+  if(bad.length)$("#"+bad[0]).focus();
+  return !bad.length;
+}
+Object.keys(LENGTH_FIELDS).forEach(id=>{
+  const input=$("#"+id); let timer=null;
+  if(!input||typeof input.addEventListener!=="function")return;
+  input.addEventListener("input",()=>{
+    clearTimeout(timer);
+    if(checkLength(LENGTH_FIELDS[id],input.value).over===0)showLength(id);
+    else timer=setTimeout(()=>showLength(id),600);
+  });
+  input.addEventListener("blur",()=>{clearTimeout(timer);showLength(id);});
+});
 
 // Raw JSON data of the last queries, per module — for the JSON button.
 // /check runs the retraction-checker CLI, which queries Crossref (main.go, cli-src-retraction).
@@ -1167,6 +1211,7 @@ function affTable(rows,journal,params){
 
 async function runAuth(){
   save();
+  if(!lengthsOk(["auth_inst"]))return;
   const p=new URLSearchParams();
   const inst=$("#auth_inst").value.trim(); if(inst)p.set("institution",inst);
   const j=$("#auth_journal").value; if(j)p.set("journal",j);
@@ -1280,6 +1325,7 @@ function startRetractionRun(mod){
 
 async function runRead(){
   save();
+  if(!lengthsOk(["read_topic"]))return;
   const topic=$("#read_topic").value.trim();
   if(!topic){$("#read_res").innerHTML='<p class="err">Please enter a topic.</p>';return;}
   const p=new URLSearchParams();
@@ -1341,6 +1387,7 @@ let risePoolText="";   // method text of the last run, for the note and the expo
 
 async function runRise(){
   save();
+  if(!lengthsOk(["rise_topic"]))return;
   const topic=$("#rise_topic").value.trim();
   if(!topic){$("#rise_res").innerHTML='<p class="err">Please enter a topic.</p>';return;}
   const minYear=Number($("#rise_year").value);
@@ -1414,6 +1461,7 @@ function downloadMeshPNG(){ if(!meshPNG){alert("Map a network first.");return;} 
 
 async function runMesh(){
   save();
+  if(!lengthsOk(["mesh_org"]))return;
   const org=$("#mesh_org").value.trim();
   if(!org){$("#mesh_res").innerHTML='<p class="err">Please enter an institution.</p>';return;}
   const p=new URLSearchParams();
