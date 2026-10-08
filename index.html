@@ -1499,6 +1499,10 @@ const RISE_METHOD_VELOCITY="Ranked by citation velocity: weighted mean of the ci
 // A missing number stays null (shown as an em dash, exported empty), never 0.
 const riseNum=v=>(v===null||v===undefined||v===""||!Number.isFinite(Number(v)))?null:Number(v);
 const riseFixed=v=>v===null?"—":v.toFixed(2);
+function riseCurrentYear(){return new Date().getUTCFullYear();}   // a function, so tests can freeze the year
+const RISE_TOO_NEW="Too new: needs one complete calendar year after publication";
+const RISE_NOT_SYNCED="No current yearly citation counts in the local mirror";
+const RISE_VEL_HINT="— in Velocity: too new (no complete year after publication yet) or not yet synced.";
 const riseTopBadge=p=>p===null?"":(p>=0.99?'<span class="top-badge">Top 1%</span>':(p>=0.9?'<span class="top-badge">Top 10%</span>':""));
 let risePoolText="";   // method text of the last run, for the note and the exports
 
@@ -1560,11 +1564,15 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
   h+='<table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
     '<th style="text-align:right">Cites</th><th class="cpy" style="text-align:right">Cites/yr</th>'+
     (velMode?'<th style="text-align:right">Velocity</th>':'')+'<th>Status</th></tr></thead><tbody>';
+  // A null velocity has two causes: too new (no complete year after publication yet) or not synced.
+  const tooNewFrom=riseCurrentYear()-1;
+  const isTooNew=x=>x.vel===null&&x.yr>=tooNewFrom;
   items.forEach((x,i)=>{
     const r=x.r, doi=paperDOI(r);
     const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
     const vel='<span class="badge-velocity">'+num(x.velocity)+'</span>';
-    const velCell=velMode?'<td class="n"><span class="vel-val">'+riseFixed(x.vel)+'</span>'+riseTopBadge(x.pct)+
+    const why=x.vel!==null?'':' title="'+(isTooNew(x)?RISE_TOO_NEW:RISE_NOT_SYNCED)+'" aria-label="'+(isTooNew(x)?RISE_TOO_NEW:RISE_NOT_SYNCED)+'"';
+    const velCell=velMode?'<td class="n"><span class="vel-val"'+why+'>'+riseFixed(x.vel)+'</span>'+riseTopBadge(x.pct)+
       '<span class="vel-sub">FWCI <span class="fwci">'+riseFixed(x.fwci)+'</span></span></td>':'';
     const status=doi?'<span class="badge-checking">checking…</span>':'<span class="badge-checking">no DOI</span>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
@@ -1573,6 +1581,7 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
       '<td id="rst-'+i+'">'+status+'</td></tr>';
   });
   h+='</tbody></table>';
+  if(velMode&&items.some(isTooNew))h+='<p class="note">'+RISE_VEL_HINT+'</p>';
   h+='<p class="note">Cites/yr = total citations ÷ paper age (years), computed by the server. A high value means the paper is accumulating citations fast — a "rising" signal, not just a lifetime total. Retraction status checked live (keyless).</p>';
   return h+noteHTML;
 }
