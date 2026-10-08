@@ -180,6 +180,10 @@
   .results table th::after{content:" ⇅";opacity:.35;font-size:.8em}
   .results table th.sorted-asc::after{content:" ↑";opacity:.9}
   .results table th.sorted-desc::after{content:" ↓";opacity:.9}
+  /* Wide results tables scroll inside their own box, never the page
+     (Roselli pattern; no sticky column.) */
+  .table-scroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+  .table-scroll:focus-visible{outline:2px solid #00d4ff;outline-offset:2px}
   td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
   .spin{display:inline-block;width:18px;height:18px;border:3px solid rgba(255,255,255,.15);border-top-color:var(--c);
     border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
@@ -320,7 +324,6 @@
     .card{border-radius:16px;backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);
       padding:1rem 1.2rem;min-height:84px;box-shadow:0 12px 32px -14px rgba(0,0,0,.7)}
     .mc{border-radius:16px;backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);padding:1.1rem}
-    table{display:block;overflow-x:auto}
     .row2{flex-direction:column;gap:0}
     .drift-row{grid-template-columns:1fr 30px 1fr;gap:6px}
     .drift-topic{font-size:.78rem;max-width:120px}
@@ -1288,7 +1291,7 @@ function affTable(rows,journal,params){
   let h=metaRow(rows.length+' institutions'+(journal?' · '+esc(journal):' · all journals')+
     (scope.length?' · '+esc(scope.join(' · ')):''),
     'aff','bibliovera-affiliations.json');
-  h+='<table><thead><tr><th>#</th><th>Institution</th><th style="text-align:right">Recent</th><th style="text-align:right">Prior</th><th>Growth</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Institutions results"><table><thead><tr><th>#</th><th>Institution</th><th style="text-align:right">Recent</th><th style="text-align:right">Prior</th><th>Growth</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{
     const recent=Number(r.recent_count)||0, prior=Number(r.prior_count)||0;
     let growth;
@@ -1315,7 +1318,7 @@ function affTable(rows,journal,params){
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+esc(r.institution)+'</td><td class="n">'+bar+'</td>'+
       '<td class="n">'+num(prior)+'</td><td>'+growth+'</td></tr>';
   });
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
   h+='<p class="note">Institutions are OpenAlex entities; hospitals and parent universities are counted separately. "no prior" means the earlier window held no publications for that institution — which can mean it did not exist yet, that it published nothing in this journal, or that it is a rename or merger of an entity counted separately before.</p>';
   return h;
 }
@@ -1363,11 +1366,11 @@ function authTable(rows,inst,params){
   let h=metaRow(rows.length+' authors'+(inst?' · '+esc(inst):'')+
     (scope.length?' · '+esc(scope.join(' · ')):''),
     'auth','bibliovera-authors.json');
-  h+='<table><thead><tr><th>#</th><th>Author</th><th style="text-align:right">Works</th><th style="text-align:right">Citations</th><th style="text-align:right">Avg</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Authors results"><table><thead><tr><th>#</th><th>Author</th><th style="text-align:right">Works</th><th style="text-align:right">Citations</th><th style="text-align:right">Avg</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+authorLink(r)+'</td>'+
     '<td class="n">'+num(r.works)+'</td><td class="n">'+num(r.total_citations)+'</td>'+
     '<td class="n">'+num(r.avg_citations)+'</td></tr>';});
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
   if(params){
     const lim=Number(params.get('limit'))||0;
     h+='<p class="note">Candidate pool: the top '+(lim*5)+' ranked authors, then filtered to at least '+esc(params.get('minWorks')||'')+' works; up to '+lim+' are shown'+(rows.length<lim?' (only '+rows.length+' passed the filter)':'')+'.</p>';
@@ -1472,7 +1475,7 @@ function readTable(rows,topic){
   if(!Array.isArray(rows)||!rows.length) return '<p class="meta">No papers found for "'+esc(topic)+'".</p>';
   let h=metaRow(rows.length+' papers · "'+esc(topic)+'" · retraction-checked',
     'read','bibliovera-reading-list.json');
-  h+='<table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Citations</th><th>Status</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Reading list results"><table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Citations</th><th>Status</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{
     const doi=paperDOI(r);
     const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
@@ -1480,7 +1483,7 @@ function readTable(rows,topic){
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
       '<td class="n">'+num(paperCitations(r))+'</td><td id="st-'+i+'">'+status+'</td></tr>';
   });
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
   h+='<p class="note">Retraction status is checked live against Crossref via the retraction-checker (keyless). Papers without a DOI can\'t be verified.</p>';
   return h;
 }
@@ -1561,7 +1564,7 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
   const scope=journal?esc(journal):'all journals';
   let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+(minYear===null?'':' · from '+minYear),
     'rise','bibliovera-rising-papers.json');
-  h+='<table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Rising papers results"><table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
     '<th style="text-align:right">Cites</th><th class="cpy" style="text-align:right">Cites/yr</th>'+
     (velMode?'<th style="text-align:right">Velocity</th>':'')+'<th>Status</th></tr></thead><tbody>';
   // A null velocity has two causes: too new (no complete year after publication yet) or not synced.
@@ -1580,7 +1583,7 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
       '<td class="n">'+num(x.cites)+'</td><td class="n cpy">'+vel+'</td>'+velCell+
       '<td id="rst-'+i+'">'+status+'</td></tr>';
   });
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
   if(velMode&&items.some(isTooNew))h+='<p class="note">'+RISE_VEL_HINT+'</p>';
   h+='<p class="note">Cites/yr = total citations ÷ paper age (years), computed by the server. A high value means the paper is accumulating citations fast — a "rising" signal, not just a lifetime total. Retraction status checked live (keyless).</p>';
   return h+noteHTML;
