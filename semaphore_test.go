@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -245,6 +246,8 @@ func runFakeCLI(mode string) {
 		// Echo the CLI arguments back as the JSON body so a test can assert them.
 		b, _ := json.Marshal(os.Args[1:])
 		fmt.Print(string(b))
+	case "curate":
+		runFakeCurate()
 	case "bytes":
 		n, _ := strconv.Atoi(os.Getenv("FAKE_CLI_BYTES"))
 		chunk := bytes.Repeat([]byte("x"), 64<<10)
@@ -266,6 +269,32 @@ func runFakeCLI(mode string) {
 			_, _ = os.Stderr.Write(chunk)
 		}
 		fmt.Print(`[]`)
+	}
+}
+
+// runFakeCurate imitates thelancet-pp-cli curate for the velocity tests. Any
+// sort other than velocity answers with one per-year row. For --sort velocity,
+// FAKE_CURATE_VEL picks the behaviour: rows (velocity rows, silent), partial
+// (rows plus the "no current yearly citation counts" stderr line), refresh
+// (exit 1 with the real refresh hint) or fail (exit 1 with an unrelated error).
+func runFakeCurate() {
+	if !slices.Contains(os.Args[1:], "velocity") {
+		fmt.Print(`[{"doi":"10.1/per-year","citations_per_year":3}]`)
+		return
+	}
+	const rows = `[{"doi":"10.1/a","velocity":2.5},{"doi":"10.1/b","velocity":null}]`
+	switch os.Getenv("FAKE_CURATE_VEL") {
+	case "partial":
+		fmt.Fprint(os.Stderr, "4683 of 7997 matched works have no current yearly citation counts; run thelancet-pp-cli refresh to include them\n")
+		fmt.Print(rows)
+	case "refresh":
+		fmt.Fprint(os.Stderr, "Error: curating: --sort velocity needs yearly citation counts, which this local store does not have yet; run 'thelancet-pp-cli refresh' to fetch them, or sort by citations, date or per-year\n")
+		os.Exit(1)
+	case "fail":
+		fmt.Fprint(os.Stderr, "Error: curating: database is locked\n")
+		os.Exit(1)
+	default:
+		fmt.Print(rows)
 	}
 }
 

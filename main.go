@@ -41,7 +41,9 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -533,14 +535,19 @@ func handleCurate(w http.ResponseWriter, r *http.Request) {
 	if journal != "" {
 		args = append(args, "--journal", journal)
 	}
-	if s := strings.TrimSpace(q.Get("sort")); s != "" {
-		switch s {
-		case "citations", "date", "per-year":
-		default:
-			writeErr(w, badRequest("sort must be citations, date or per-year"))
-			return
-		}
-		args = append(args, "--sort", s)
+	sortBy := strings.TrimSpace(q.Get("sort"))
+	switch sortBy {
+	case "", "citations", "date", "per-year", "velocity":
+	default:
+		writeErr(w, badRequest("sort must be citations, date, per-year or velocity"))
+		return
+	}
+	if sortBy == "velocity" {
+		serveCurateVelocity(r.Context(), w, args)
+		return
+	}
+	if sortBy != "" {
+		args = append(args, "--sort", sortBy)
 	}
 
 	raw, err := runCLIRaw(r.Context(), args)
@@ -549,6 +556,51 @@ func handleCurate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeRaw(w, raw)
+}
+
+// velocityNeedsRefresh is the part of the CLI's error that identifies "this
+// store has no yearly citation counts": measured 2026-10-08 against the live
+// data.db with the CLI built from e528b11, exit 1 and stderr
+// "Error: curating: --sort velocity needs yearly citation counts, which this
+// local store does not have yet; run 'thelancet-pp-cli refresh' ...".
+const velocityNeedsRefresh = "--sort velocity needs yearly citation counts"
+
+// velocityUnsynced matches the CLI's success-path stderr notice, e.g. "4683 of
+// 7997 matched works have no current yearly citation counts; run ...".
+var velocityUnsynced = regexp.MustCompile(`(\d+) of (\d+) matched works have no current yearly citation counts`)
+
+// serveCurateVelocity serves /curate?sort=velocity. The answer is an envelope
+// {"rows": <CLI JSON>, "sort": "velocity", "sort_fallback"?, "notice"?} so the
+// page can tell the user what happened; the other sorts keep the bare array.
+//
+// Velocity needs yearly citation counts that only a CLI refresh writes. Until
+// the server has run one, the CLI exits non-zero with velocityNeedsRefresh; that
+// one failure, and no other, is answered with the per-year ranking of the same
+// request plus a notice. Anything else is still an upstream error.
+func serveCurateVelocity(ctx context.Context, w http.ResponseWriter, base []string) {
+	raw, stderr, err := runCLI(ctx, append(slices.Clone(base), "--sort", "velocity"))
+	env := map[string]any{"sort": "velocity"}
+	var fail cliFailure
+	switch {
+	case errors.As(err, &fail) && strings.Contains(fail.stderr, velocityNeedsRefresh):
+		raw, _, err = runCLI(ctx, append(slices.Clone(base), "--sort", "per-year"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		env["sort"] = "per-year"
+		env["sort_fallback"] = "per-year"
+		env["notice"] = "Citation velocity is not available yet (yearly citation counts have not been loaded). Showing papers ranked by citations per year instead."
+	case err != nil:
+		writeErr(w, err)
+		return
+	default:
+		if m := velocityUnsynced.FindStringSubmatch(stderr); m != nil {
+			env["notice"] = m[1] + " of " + m[2] + " matched works have no current yearly citation counts; they are listed last."
+		}
+	}
+	env["rows"] = json.RawMessage(raw)
+	writeJSONValue(w, env)
 }
 
 // maxMeshPairs is the ceiling /mesh offers for limit. Measured against
@@ -785,13 +837,27 @@ func cliCmdLabel(args []string) string {
 	return args[0]
 }
 
+// cliFailure is the error runCLI returns when the child exits non-zero. It
+// still prints as the fixed client message; stderr rides along only so a caller
+// can recognise one specific, known failure (see handleCurate).
+type cliFailure struct{ stderr string }
+
+func (cliFailure) Error() string { return "analytics failed" }
+
 // runCLIRaw executes the analytics CLI and returns its validated JSON stdout.
+func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
+	raw, _, err := runCLI(parent, args)
+	return raw, err
+}
+
+// runCLI is runCLIRaw plus the child's stderr from a successful run. A failed
+// run carries its stderr inside the returned cliFailure instead.
 //
 // wait_ms and elapsed_ms are logged apart because wait_ms is the only way to
 // tell a saturated slot pool from a slow upstream — from outside, both look
 // like one slow page. bin= is on every line because the two binaries share a
 // single slot pool, so one can starve the other.
-func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
+func runCLI(parent context.Context, args []string) ([]byte, string, error) {
 	label := cliCmdLabel(args)
 
 	waitStart := time.Now()
@@ -799,7 +865,7 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 	waitMS := time.Since(waitStart).Milliseconds()
 	if err != nil {
 		log.Printf("cli: busy bin=analytics cmd=%s wait_ms=%d err=%v", label, waitMS, err)
-		return nil, err
+		return nil, "", err
 	}
 	defer cliSem.release()
 
@@ -810,18 +876,18 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 	elapsed := time.Since(runStart).Milliseconds()
 	if errors.Is(err, errOutputTooLarge) {
 		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=%v (cap %d bytes), child killed", label, waitMS, elapsed, err, cliStdoutCap)
-		return nil, err
+		return nil, "", err
 	}
 	if err != nil {
 		// The client gets a fixed message: stderr (and err, which can name a
 		// path) are for the log only.
 		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=%v — stderr: %s", label, waitMS, elapsed, err, stderrForLog(stderr))
-		return nil, errors.New("analytics failed")
+		return nil, "", cliFailure{stderr: stderr}
 	}
 	raw := bytes.TrimSpace(stdout)
 	if !json.Valid(raw) {
 		log.Printf("cli: fail bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d err=non-json bytes=%d", label, waitMS, elapsed, len(raw))
-		return nil, errors.New("CLI returned non-JSON output")
+		return nil, "", errors.New("CLI returned non-JSON output")
 	}
 	// A successful run can still have written to stderr, and those messages are
 	// the ones worth seeing: the CLI warns there when the OpenAlex per-IP quota
@@ -834,7 +900,7 @@ func runCLIRaw(parent context.Context, args []string) ([]byte, error) {
 	} else {
 		log.Printf("cli: ok bin=analytics cmd=%s wait_ms=%d elapsed_ms=%d bytes=%d", label, waitMS, elapsed, len(raw))
 	}
-	return decodeEntities(raw), nil
+	return decodeEntities(raw), stderr, nil
 }
 
 // entityFields are the display-text keys the CLI can return with HTML

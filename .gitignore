@@ -4,6 +4,8 @@
 # only keeps the local copy out of a stray `git add -A`. Where the running
 # container's /app/data.db comes from is a separate open question.
 data.db
+data.db-shm
+data.db-wal
 
 # Only the large full-history backups stay local.
 data-full-228mb.db.bak

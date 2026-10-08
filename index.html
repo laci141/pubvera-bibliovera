@@ -236,6 +236,10 @@
     padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:700;white-space:nowrap;
     font-variant-numeric:tabular-nums}
   .year-pill{color:#99a;font-size:.78rem;font-variant-numeric:tabular-nums}
+  .vel-val{font-weight:700;font-variant-numeric:tabular-nums}
+  .vel-sub{display:block;margin-top:2px;font-size:.72rem;color:#99a;white-space:nowrap}
+  .top-badge{margin-left:.4em;padding:1px 7px;border-radius:999px;font-size:.68rem;font-weight:700;
+    background:rgba(245,158,11,.18);color:#fcd34d;border:1px solid rgba(245,158,11,.40)}
 
   /* Drift / Topic Trends — diverging bar chart */
   .drift-row{display:grid;grid-template-columns:1fr 34px 1fr;align-items:center;gap:10px;
@@ -350,6 +354,7 @@
     box-shadow:0 18px 50px -18px rgba(0,0,0,.75);
     font-size:.72rem;line-height:1.5;color:#8d97ad;text-align:center}
   @media (max-width:600px){
+    table.vel .cpy{display:none}   /* Rising: Velocity replaces Cites/yr on phones, same column count as before */
     .disclaimer{margin:0 1rem 1.5rem;padding:12px 14px;border-radius:14px;
       backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);font-size:.68rem}
   }
@@ -871,7 +876,18 @@ registerView("auth",()=>{
   return {rows:v.rows.map(r=>Object.assign({},r,{avg_citations:round1(r.avg_citations)})),filters:v.filters};
 });
 registerView("read",()=>domView("read"));
-registerView("rise",()=>domView("rise"));
+// checkRetractions appends its columns after the row is built, so the velocity
+// columns are moved behind them here: existing column positions stay unchanged.
+const RISE_TAIL_COLS=["velocity","citations_last_year","fwci","citation_normalized_percentile"];
+registerView("rise",()=>{
+  const v=domView("rise");
+  return {rows:v.rows.map(r=>{
+    const o={};
+    Object.keys(r).forEach(k=>{if(!RISE_TAIL_COLS.includes(k))o[k]=r[k];});
+    RISE_TAIL_COLS.forEach(k=>{o[k]=k in r?r[k]:null;});
+    return o;
+  }),filters:v.filters};
+});
 // drift + mesh render charts, not tables — the qfilter cannot narrow them,
 // so their exports fall back to the full module data (which IS what's shown).
 
@@ -1478,6 +1494,12 @@ function readTable(rows,topic){
 const RISE_REQUEST_LIMIT=100;
 const RISE_METHOD="Ranked by average citations per year since publication (local Lancet mirror). "+
   "Age = years since the publication date, or 1 July of the publication year if the date is missing; at least 0.25 years.";
+const RISE_METHOD_VELOCITY="Ranked by citation velocity: weighted mean of the citations in the last up to 3 complete years "+
+  "(50% / 30% / 20%, local Lancet mirror). Papers without current yearly citation counts are listed last.";
+// A missing number stays null (shown as an em dash, exported empty), never 0.
+const riseNum=v=>(v===null||v===undefined||v===""||!Number.isFinite(Number(v)))?null:Number(v);
+const riseFixed=v=>v===null?"—":v.toFixed(2);
+const riseTopBadge=p=>p===null?"":(p>=0.99?'<span class="top-badge">Top 1%</span>':(p>=0.9?'<span class="top-badge">Top 10%</span>':""));
 let risePoolText="";   // method text of the last run, for the note and the exports
 
 async function runRise(){
@@ -1494,13 +1516,16 @@ async function runRise(){
   const current=()=>runId===retractionRun.rise;
   const p=new URLSearchParams();
   p.set("topic",topic); if(j)p.set("journal",j);
-  p.set("sort","per-year"); p.set("limit",String(RISE_REQUEST_LIMIT));
+  p.set("sort","velocity"); p.set("limit",String(RISE_REQUEST_LIMIT));
   try{
     const d=await fetchJSON("/curate?"+p.toString(),ctrl.signal);
     if(!current())return;
-    const rows=Array.isArray(d)?d:(d.works||d.results||[]);
-    const notes=[];
-    risePoolText=RISE_METHOD+" Min year and min citations are applied to the top "+RISE_REQUEST_LIMIT+" ranked rows.";
+    // /curate?sort=velocity answers {rows, sort, sort_fallback?, notice?}; a bare array is also accepted.
+    const env=Array.isArray(d)?{}:d;
+    const rows=Array.isArray(d)?d:(d.rows||d.works||d.results||[]);
+    const velMode=env.sort==="velocity"&&!env.sort_fallback;
+    const notes=env.notice?[String(env.notice)]:[];
+    risePoolText=(velMode?RISE_METHOD_VELOCITY:RISE_METHOD)+" Min year and min citations are applied to the top "+RISE_REQUEST_LIMIT+" ranked rows.";
     const minC=numValue("rise_cites")||0;
     let noYear=0;
     const enriched=[];
@@ -1508,38 +1533,43 @@ async function runRise(){
       const yr=paperYear(r)||Number(String(r.pub_date||"").slice(0,4))||0;
       if(!(yr>0)){noYear++;return;}
       const cites=paperCitations(r);
-      enriched.push({r,yr,when:r.pub_date||String(yr),cites,velocity:Number(r.citations_per_year)||0});
+      enriched.push({r,yr,when:r.pub_date||String(yr),cites,velocity:Number(r.citations_per_year)||0,
+        vel:riseNum(r.velocity),last:riseNum(r.citations_last_year),fwci:riseNum(r.fwci),pct:riseNum(r.citation_normalized_percentile)});
     });
     const ranked=enriched.filter(x=>(minYear===null||x.yr>=minYear) && x.cites>=minC).slice(0,limit);
     if(noYear)notes.push(noYear+" paper"+(noYear===1?"":"s")+" without a valid publication year "+
       (noYear===1?"was":"were")+" excluded from the ranking.");
     lastData.rise=ranked.map(x=>({title:x.r.title,doi:paperDOI(x.r),year:x.yr,pub_date:x.r.pub_date||"",
       journal:x.r.journal||x.r.source||"",authors:x.r.authors||"",
-      cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10}));
+      cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10,
+      velocity:x.vel,citations_last_year:x.last,fwci:x.fwci,citation_normalized_percentile:x.pct}));
     queryFilters.rise=['topic "'+topic+'"',j||"all journals"].concat(minYear!==null?["from "+minYear]:[],
       minC>0?["min "+minC+" citations"]:[],["limit "+limit]);
-    res.innerHTML=riseTable(ranked,topic,j,minYear,notes.concat([risePoolText]));
+    res.innerHTML=riseTable(ranked,topic,j,minYear,notes.concat([risePoolText]),velMode);
     updateQcount(res);
     checkRetractions(ranked.map(x=>x.r),lastData.rise,"rst-","rise",runId);
   }catch(e){if(current())res.innerHTML=errorHTML(e);}
 }
-function riseTable(items,topic,journal,minYear,notes){
+function riseTable(items,topic,journal,minYear,notes,velMode){
   const noteHTML=(notes||[]).map(n=>'<p class="note">'+esc(n)+'</p>').join("");
   if(!items.length) return '<p class="meta">No papers '+(minYear===null?'':'from '+minYear+' on ')+'for "'+esc(topic)+'"'+
     (journal?' in '+esc(journal):'')+'. Try '+(minYear===null?'a broader topic':'a lower min year or a broader topic')+'.</p>'+noteHTML;
   const scope=journal?esc(journal):'all journals';
   let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+(minYear===null?'':' · from '+minYear),
     'rise','bibliovera-rising-papers.json');
-  h+='<table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
-    '<th style="text-align:right">Cites</th><th style="text-align:right">Cites/yr</th><th>Status</th></tr></thead><tbody>';
+  h+='<table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
+    '<th style="text-align:right">Cites</th><th class="cpy" style="text-align:right">Cites/yr</th>'+
+    (velMode?'<th style="text-align:right">Velocity</th>':'')+'<th>Status</th></tr></thead><tbody>';
   items.forEach((x,i)=>{
     const r=x.r, doi=paperDOI(r);
     const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
     const vel='<span class="badge-velocity">'+num(x.velocity)+'</span>';
+    const velCell=velMode?'<td class="n"><span class="vel-val">'+riseFixed(x.vel)+'</span>'+riseTopBadge(x.pct)+
+      '<span class="vel-sub">FWCI <span class="fwci">'+riseFixed(x.fwci)+'</span></span></td>':'';
     const status=doi?'<span class="badge-checking">checking…</span>':'<span class="badge-checking">no DOI</span>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
       '<td class="n"><span class="year-pill">'+esc(x.when)+'</span></td>'+
-      '<td class="n">'+num(x.cites)+'</td><td class="n">'+vel+'</td>'+
+      '<td class="n">'+num(x.cites)+'</td><td class="n cpy">'+vel+'</td>'+velCell+
       '<td id="rst-'+i+'">'+status+'</td></tr>';
   });
   h+='</tbody></table>';
