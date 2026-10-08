@@ -211,7 +211,7 @@ function setForm() {
   await run("runRise()"); await tick();
   const h = resHTML();
   check("I: velocity has 2 decimals (3.46, 2.00)", h.includes('<span class="vel-val">3.46</span>') && h.includes('<span class="vel-val">2.00</span>'));
-  check("I: null velocity renders an em dash, not 0", h.includes('<span class="vel-val">—</span>') && !h.includes('<span class="vel-val">0.00</span>') && !h.includes('<span class="vel-val">0</span>'));
+  check("I: null velocity renders an em dash, not 0", /<span class="vel-val"[^>]*>—<\/span>/.test(h) && !h.includes('<span class="vel-val">0.00</span>') && !h.includes('<span class="vel-val">0</span>'));
   check("I: FWCI has 2 decimals, null is an em dash", h.includes('<span class="fwci">1.23</span>') && h.includes('<span class="fwci">0.50</span>') && h.includes('<span class="fwci">—</span>'));
   check("I: 0.995 shows only Top 1%", h.includes('<span class="top-badge">Top 1%</span>') && (h.match(/Top 1%/g) || []).length === 1);
   check("I: 0.95 and exactly 0.9 show Top 10%", (h.match(/<span class="top-badge">Top 10%<\/span>/g) || []).length === 2);
@@ -260,6 +260,53 @@ function setForm() {
   check("K: fallback response, JSON row key order (" + kf.jsonKeys + ")", kf.jsonKeys === ORDER);
   check("K: fallback rows keep the 4 keys, empty at the end",
     kf.jsonRows.every(r => ["velocity", "citations_last_year", "fwci", "citation_normalized_percentile"].every(k => k in r && (r[k] === null || r[k] === ""))));
+
+  // ── Test L: why a velocity cell is empty. The current year is frozen (injected through the
+  // page's riseCurrentYear helper) so the test does not change behaviour in 2027. With 2026
+  // frozen, rows from 2025 and 2026 are "too new"; everything older is "not synced". ──
+  run("riseCurrentYear=()=>2026");
+  const TOO_NEW = "Too new: needs one complete calendar year after publication";
+  const NOT_SYNCED = "No current yearly citation counts in the local mirror";
+  const HINT = "— in Velocity: too new (no complete year after publication yet) or not yet synced.";
+  const nrow = (doi, year, vel) => Object.assign(paper("L " + doi, doi, year, 10, 1, year + "-02-03"),
+    { velocity: vel, citations_last_year: null, fwci: null, citation_normalized_percentile: null });
+  // the vel-val span of the row with this doi: [title, aria-label, text] or null
+  const velSpan = doi => {
+    const i = risen().findIndex(r => r.doi === doi);
+    const seg = resHTML().split('<tr data-i="' + i + '"')[1] || "";
+    const m = /<span class="vel-val"([^>]*)>([^<]*)<\/span>/.exec(seg);
+    if (!m) return null;
+    const attr = n => { const a = new RegExp(" " + n + '="([^"]*)"').exec(m[1]); return a ? a[1] : null; };
+    return [attr("title"), attr("aria-label"), m[2]];
+  };
+  curateHandler = () => ({ sort: "velocity", rows: [
+    nrow("10.1/l25", 2025, null), nrow("10.1/l16", 2016, null), nrow("10.1/l26", 2026, null),
+    nrow("10.1/l24", 2024, null), nrow("10.1/lok", 2025, 1.5),
+  ] });
+  await run("runRise()"); await tick();
+  const l25 = velSpan("10.1/l25"), l16 = velSpan("10.1/l16"), l26 = velSpan("10.1/l26"), l24 = velSpan("10.1/l24"), lok = velSpan("10.1/lok");
+  check("L: 2025 row with null velocity: em dash with the Too new title and aria-label (" + JSON.stringify(l25) + ")",
+    !!l25 && l25[0] === TOO_NEW && l25[1] === TOO_NEW && l25[2] === "—");
+  check("L: 2016 row with null velocity: em dash with the No current yearly title and aria-label (" + JSON.stringify(l16) + ")",
+    !!l16 && l16[0] === NOT_SYNCED && l16[1] === NOT_SYNCED && l16[2] === "—");
+  check("L: 2026 row (current year) is too new (" + JSON.stringify(l26) + ")", !!l26 && l26[0] === TOO_NEW);
+  check("L: 2024 row (current year - 2) is not too new (" + JSON.stringify(l24) + ")", !!l24 && l24[0] === NOT_SYNCED);
+  check("L: a 2025 row WITH a velocity shows the number and no hint (" + JSON.stringify(lok) + ")",
+    !!lok && lok[0] === null && lok[1] === null && lok[2] === "1.50");
+  check("L: explanation line appears when a too-new row exists", resHTML().includes('<p class="note">' + HINT + "</p>"));
+  check("L: explanation line appears once", resHTML().split(HINT).length === 2);
+  check("L: the line sits below the table", resHTML().indexOf(HINT) > resHTML().indexOf("</table>"));
+  check("L: export keeps null velocity (not 0, not a string)", risen().every(r => r.doi === "10.1/lok" ? r.velocity === 1.5 : r.velocity === null));
+  run('downloadCSV("rise","x.csv")');
+  check("L: CSV export carries no hint text", !blobs[blobs.length - 1].includes("Too new") && !blobs[blobs.length - 1].includes("No current yearly"));
+
+  curateHandler = () => ({ sort: "velocity", rows: [nrow("10.1/m16", 2016, null), nrow("10.1/m20", 2020, 2), nrow("10.1/m24", 2024, null)] });
+  await run("runRise()"); await tick();
+  check("L: no explanation line when no row is too new", !resHTML().includes("too new") && !resHTML().includes("not yet synced"));
+  check("L: rows without a too-new case still get the No current yearly title", velSpan("10.1/m16")[0] === NOT_SYNCED);
+  curateHandler = () => ({ sort: "per-year", rows: [nrow("10.1/f25", 2025, null)], sort_fallback: "per-year", notice: "fallback" });
+  await run("runRise()"); await tick();
+  check("L: no velocity column and no explanation line in the per-year fallback", !resHTML().includes('class="vel-val"') && !resHTML().includes("not yet synced"));
 
   if (failed) {
     console.error("\n" + failed + " check(s) FAILED");
