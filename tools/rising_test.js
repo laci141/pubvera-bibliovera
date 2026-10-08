@@ -1,5 +1,5 @@
-// Rising Papers test: one /curate?sort=per-year request, server-side
-// citations_per_year as the rate, pub_date display (year fallback), client-side
+// Rising Papers test: one /curate?sort=velocity request (per-year fallback), server-side
+// velocity / FWCI / top-percentile badge, citations_per_year, pub_date display (year fallback), client-side
 // min-year / min-citations filters, stale-run handling, and the method text in
 // the note and the export provenance.
 //
@@ -119,7 +119,7 @@ function setForm() {
 (async () => {
   setForm();
 
-  // ── Test A: one request, sort=per-year, limit=100; order and rate come from the server ──
+  // ── Test A: one request, sort=velocity, limit=100; order and rate come from the server ──
   const rows = [
     paper("Hot", "10.1/hot", 2024, 40, 25.5, "2024-09-01"),
     paper("Mid", "10.1/mid", 2015, 900, 9.1, "2015-03-02"),
@@ -131,7 +131,7 @@ function setForm() {
   await run("runRise()"); await tick();
   byId("rise_journal").value = "";
   check("A: exactly one /curate request (" + curateCalls.length + ")", curateCalls.length === 1);
-  check("A: sort=per-year, limit=100 (" + curateCalls[0].sort + "," + curateCalls[0].limit + ")", curateCalls[0].sort === "per-year" && curateCalls[0].limit === "100");
+  check("A: sort=velocity, limit=100 (" + curateCalls[0].sort + "," + curateCalls[0].limit + ")", curateCalls[0].sort === "velocity" && curateCalls[0].limit === "100");
   check("A: topic and journal are forwarded", curateCalls[0].topic === "gene therapy" && curateCalls[0].journal === "lancet");
   check("A: server order is kept, not re-ranked by cited_count (" + dois().join(">") + ")", dois().join(">") === "10.1/hot>10.1/mid>10.1/cold");
   check("A: rate is the server's citations_per_year", risen()[0].citations_per_year === 25.5 && risen()[1].citations_per_year === 9.1);
@@ -200,6 +200,66 @@ function setForm() {
   run('downloadJSON("rise","x.json")');
   const payload = JSON.parse(blobs[blobs.length - 1]);
   check("H: JSON export provenance carries the method", JSON.stringify(payload.export).includes(method));
+
+  // ── Test I: velocity / FWCI / top-percentile badge; null velocity last, order kept ──
+  const vrow = (doi, vel, fwci, pct) => Object.assign(paper("T " + doi, doi, 2020, 100, 5, "2020-01-01"),
+    { velocity: vel, citations_last_year: 7, acceleration: 1, fwci, citation_normalized_percentile: pct });
+  curateHandler = () => ({ sort: "velocity", rows: [
+    vrow("10.1/v1", 3.456, 1.234, 0.995), vrow("10.1/v2", 2, 0.5, 0.95), vrow("10.1/v3", 1, 2, 0.89),
+    vrow("10.1/n1", null, null, null), vrow("10.1/n2", null, 3, 0.9),
+  ] });
+  await run("runRise()"); await tick();
+  const h = resHTML();
+  check("I: velocity has 2 decimals (3.46, 2.00)", h.includes('<span class="vel-val">3.46</span>') && h.includes('<span class="vel-val">2.00</span>'));
+  check("I: null velocity renders an em dash, not 0", h.includes('<span class="vel-val">—</span>') && !h.includes('<span class="vel-val">0.00</span>') && !h.includes('<span class="vel-val">0</span>'));
+  check("I: FWCI has 2 decimals, null is an em dash", h.includes('<span class="fwci">1.23</span>') && h.includes('<span class="fwci">0.50</span>') && h.includes('<span class="fwci">—</span>'));
+  check("I: 0.995 shows only Top 1%", h.includes('<span class="top-badge">Top 1%</span>') && (h.match(/Top 1%/g) || []).length === 1);
+  check("I: 0.95 and exactly 0.9 show Top 10%", (h.match(/<span class="top-badge">Top 10%<\/span>/g) || []).length === 2);
+  check("I: 0.89 and null show no badge", (h.match(/class="top-badge"/g) || []).length === 3);
+  check("I: null-velocity rows stay at the end in received order (" + dois().join(">") + ")", dois().join(">") === "10.1/v1>10.1/v2>10.1/v3>10.1/n1>10.1/n2");
+  const keys = Object.keys(risen()[0]);
+  check("I: existing export columns unchanged, new ones appended (" + keys.slice(0, 12).join(",") + ")",
+    keys.slice(0, 12).join(",") === "title,doi,year,pub_date,journal,authors,cited_by_count,citations_per_year,velocity,citations_last_year,fwci,citation_normalized_percentile");
+  check("I: export keeps null (not 0) for a missing velocity", risen()[3].velocity === null && risen()[3].fwci === null && risen()[0].velocity === 3.456);
+  check("I: no fallback notice when velocity worked", !/not available yet/i.test(h));
+
+  // ── Test J: fallback envelope and server notice are shown ──
+  curateHandler = () => ({ sort: "per-year", rows: rows, sort_fallback: "per-year", notice: "Velocity needs yearly counts; showing citations per year." });
+  await run("runRise()"); await tick();
+  check("J: fallback notice text is shown", resHTML().includes("Velocity needs yearly counts; showing citations per year."));
+  check("J: rows of the fallback are rendered (" + dois().join(",") + ")", dois().join(",") === "10.1/hot,10.1/mid,10.1/cold");
+  check("J: the method text names per-year when falling back", resHTML().includes("Ranked by average citations per year") && !resHTML().includes("Ranked by citation velocity"));
+  curateHandler = () => ({ sort: "velocity", rows: [vrow("10.1/v1", 3, 1, 0.5)], notice: "4683 of 7997 matched works have no current yearly citation counts." });
+  await run("runRise()"); await tick();
+  check("J: unsynced-count notice is shown without a fallback", resHTML().includes("4683 of 7997 matched works have no current yearly citation counts."));
+  check("J: velocity method text when velocity worked", resHTML().includes("Ranked by citation velocity"));
+  curateHandler = () => ({ sort: "velocity", rows: [], notice: "<b>x</b>" });
+  await run("runRise()"); await tick();
+  check("J: notice is escaped", !resHTML().includes("<b>x</b>") && resHTML().includes("&lt;b&gt;x&lt;/b&gt;"));
+
+  // ── Test K: exported column order. The 4 velocity columns come AFTER every existing one
+  // (retraction + concern columns included), so existing column positions never move. ──
+  const ORDER = "title,doi,year,pub_date,journal,authors,cited_by_count,citations_per_year,retraction_status,retraction_checked_at,expression_of_concern,concern_date,concern_notice_doi,velocity,citations_last_year,fwci,citation_normalized_percentile";
+  const exportKeys = () => {
+    run('downloadCSV("rise","x.csv")');
+    const csvHeader = blobs[blobs.length - 1].split(/\r?\n/)[2];
+    run('downloadJSON("rise","x.json")');
+    const jsonRows = JSON.parse(blobs[blobs.length - 1]).rows;
+    return { csvHeader, jsonKeys: Object.keys(jsonRows[0]).join(","), jsonRows };
+  };
+  curateHandler = () => ({ sort: "velocity", rows: [vrow("10.1/k1", 3.456, 1.234, 0.995), vrow("10.1/k2", null, null, null)] });
+  await run("runRise()"); await tick();
+  const kv = exportKeys();
+  check("K: velocity response, CSV header order (" + kv.csvHeader + ")", kv.csvHeader === ORDER);
+  check("K: velocity response, JSON row key order (" + kv.jsonKeys + ")", kv.jsonKeys === ORDER);
+  check("K: velocity values survive the reorder", kv.jsonRows[0].velocity === 3.456 && kv.jsonRows[0].fwci === 1.234 && kv.jsonRows[1].velocity === null);
+  curateHandler = () => ({ sort: "per-year", rows: rows, sort_fallback: "per-year", notice: "fallback" });
+  await run("runRise()"); await tick();
+  const kf = exportKeys();
+  check("K: fallback response, CSV header order (" + kf.csvHeader + ")", kf.csvHeader === ORDER);
+  check("K: fallback response, JSON row key order (" + kf.jsonKeys + ")", kf.jsonKeys === ORDER);
+  check("K: fallback rows keep the 4 keys, empty at the end",
+    kf.jsonRows.every(r => ["velocity", "citations_last_year", "fwci", "citation_normalized_percentile"].every(k => k in r && (r[k] === null || r[k] === ""))));
 
   if (failed) {
     console.error("\n" + failed + " check(s) FAILED");

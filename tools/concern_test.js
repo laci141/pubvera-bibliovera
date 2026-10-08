@@ -279,8 +279,11 @@ const idsIn = h => [...h.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
     run('downloadCSV("' + mod + '","x.csv")');
     const hdr = lastBlob().replace(/^﻿/, "").split("\r\n")[2].split(",");
     const tail = hdr.slice(hdr.indexOf("retraction_status"));
-    check(lab("f: CSV columns end ..., retraction_status, retraction_checked_at, expression_of_concern, concern_date, concern_notice_doi (" + tail.join(",") + ")"),
-      tail.join(",") === "retraction_status,retraction_checked_at,expression_of_concern,concern_date,concern_notice_doi");
+    // Rising appends its 4 velocity columns after the concern columns; Read ends with them.
+    const wantTail = "retraction_status,retraction_checked_at,expression_of_concern,concern_date,concern_notice_doi" +
+      (mod === "rise" ? ",velocity,citations_last_year,fwci,citation_normalized_percentile" : "");
+    check(lab("f: CSV columns end " + wantTail + " (" + tail.join(",") + ")"),
+      tail.join(",") === wantTail);
     run('downloadXLSX("' + mod + '","x.xlsx")');
     const xh = []; for (let c = 0; c < xlsxSheet._cols; c++) xh.push(xlsxSheet[XLSX.utils.encode_cell({ r: 1, c })].v);
     check(lab("f: XLSX header order identical to CSV"), xh.slice(xh.indexOf("retraction_status")).join(",") === tail.join(","));
