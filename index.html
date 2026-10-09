@@ -117,6 +117,12 @@
   .card .tx{display:flex;flex-direction:column;min-width:0}
   .card .lb{font-size:1.2rem;font-weight:600;color:var(--c);white-space:nowrap}
   .card .sub{font-size:.8rem;color:#99a;margin-top:.1rem;white-space:nowrap}
+  /* The card is a <button> (keyboard operable), so its parts are spans: give the
+     spans the block layout the old divs had and strip the button defaults. */
+  button.card{font:inherit;color:inherit;text-align:inherit;width:100%;margin:0;appearance:none;-webkit-appearance:none}
+  .card .ic,.card .lb,.card .sub{display:block}
+  .card:focus-visible{outline:3px solid var(--c);outline-offset:3px}
+  .mc:focus{outline:none}
 
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
     -webkit-backdrop-filter:blur(6px);
@@ -403,35 +409,35 @@
 </section>
 
 <section class="bento">
-  <div class="card" style="--c:#00d4ff" onclick="openModal('aff')">
-    <div class="ic">👥</div>
-    <div class="tx"><div class="lb">Affiliations</div><div class="sub">Institution growth</div></div>
-  </div>
-  <div class="card" style="--c:#7c3aed" onclick="openModal('auth')">
-    <div class="ic">✍️</div>
-    <div class="tx"><div class="lb">Authors</div><div class="sub">Ranked by citations</div></div>
-  </div>
-  <div class="card" style="--c:#22c55e" onclick="openModal('drift')">
-    <div class="ic">📈</div>
-    <div class="tx"><div class="lb">Topic Trends</div><div class="sub">Rising &amp; fading themes</div></div>
-  </div>
-  <div class="card" style="--c:#38bdf8" onclick="openModal('read')">
-    <div class="ic">📚</div>
-    <div class="tx"><div class="lb">Reading List</div><div class="sub">Ranked + retraction-checked</div></div>
-  </div>
-  <div class="card" style="--c:#f59e0b" onclick="openModal('rise')">
-    <div class="ic">🚀</div>
-    <div class="tx"><div class="lb">Rising Papers</div><div class="sub">Fastest-cited fresh work</div></div>
-  </div>
-  <div class="card" style="--c:#ec4899" onclick="openModal('mesh')">
-    <div class="ic">🕸️</div>
-    <div class="tx"><div class="lb">Collaboration</div><div class="sub">Co-authorship network</div></div>
-  </div>
+  <button type="button" class="card" style="--c:#00d4ff" onclick="openModal('aff')">
+    <span class="ic">👥</span>
+    <span class="tx"><span class="lb">Affiliations</span><span class="sub">Institution growth</span></span>
+  </button>
+  <button type="button" class="card" style="--c:#7c3aed" onclick="openModal('auth')">
+    <span class="ic">✍️</span>
+    <span class="tx"><span class="lb">Authors</span><span class="sub">Ranked by citations</span></span>
+  </button>
+  <button type="button" class="card" style="--c:#22c55e" onclick="openModal('drift')">
+    <span class="ic">📈</span>
+    <span class="tx"><span class="lb">Topic Trends</span><span class="sub">Rising &amp; fading themes</span></span>
+  </button>
+  <button type="button" class="card" style="--c:#38bdf8" onclick="openModal('read')">
+    <span class="ic">📚</span>
+    <span class="tx"><span class="lb">Reading List</span><span class="sub">Ranked + retraction-checked</span></span>
+  </button>
+  <button type="button" class="card" style="--c:#f59e0b" onclick="openModal('rise')">
+    <span class="ic">🚀</span>
+    <span class="tx"><span class="lb">Rising Papers</span><span class="sub">Fastest-cited fresh work</span></span>
+  </button>
+  <button type="button" class="card" style="--c:#ec4899" onclick="openModal('mesh')">
+    <span class="ic">🕸️</span>
+    <span class="tx"><span class="lb">Collaboration</span><span class="sub">Co-authorship network</span></span>
+  </button>
 </section>
 
 <!-- Affiliations modal -->
-<div class="modal" id="affModal"><div class="mc" style="--c:#00d4ff">
-  <div class="mh"><h2>👥 Affiliation Growth</h2><button class="x" onclick="closeModal('aff')">&times;</button></div>
+<div class="modal" id="affModal"><div class="mc" style="--c:#00d4ff" role="dialog" aria-modal="true" aria-labelledby="affModalTitle" tabindex="-1">
+  <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" onclick="closeModal('aff')">&times;</button></div>
   <label>Journal</label>
   <select id="aff_journal">
     <option value="">All Lancet journals</option>
@@ -458,8 +464,8 @@
 </div></div>
 
 <!-- Authors modal -->
-<div class="modal" id="authModal"><div class="mc" style="--c:#7c3aed">
-  <div class="mh"><h2>✍️ Author Rankings</h2><button class="x" onclick="closeModal('auth')">&times;</button></div>
+<div class="modal" id="authModal"><div class="mc" style="--c:#7c3aed" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
+  <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" onclick="closeModal('auth')">&times;</button></div>
   <label>Institution (substring, optional)</label>
   <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
   <div class="lenmsg err" id="auth_inst_msg" aria-live="polite"></div>
@@ -479,8 +485,8 @@
 </div></div>
 
 <!-- Topic Trends (drift) modal -->
-<div class="modal" id="driftModal"><div class="mc" style="--c:#22c55e">
-  <div class="mh"><h2>📈 Topic Trends</h2><button class="x" onclick="closeModal('drift')">&times;</button></div>
+<div class="modal" id="driftModal"><div class="mc" style="--c:#22c55e" role="dialog" aria-modal="true" aria-labelledby="driftModalTitle" tabindex="-1">
+  <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" onclick="closeModal('drift')">&times;</button></div>
   <label>Journal</label>
   <select id="drift_journal">
     <option value="">All Lancet journals</option>
@@ -508,8 +514,8 @@
 </div></div>
 
 <!-- Reading List (curate + retraction) modal -->
-<div class="modal" id="readModal"><div class="mc" style="--c:#38bdf8">
-  <div class="mh"><h2>📚 Reading List</h2><button class="x" onclick="closeModal('read')">&times;</button></div>
+<div class="modal" id="readModal"><div class="mc" style="--c:#38bdf8" role="dialog" aria-modal="true" aria-labelledby="readModalTitle" tabindex="-1">
+  <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" onclick="closeModal('read')">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
   <div class="lenmsg err" id="read_topic_msg" aria-live="polite"></div>
@@ -549,8 +555,8 @@
 </div></div>
 
 <!-- Rising Papers modal -->
-<div class="modal" id="riseModal"><div class="mc" style="--c:#f59e0b">
-  <div class="mh"><h2>🚀 Rising Papers</h2><button class="x" onclick="closeModal('rise')">&times;</button></div>
+<div class="modal" id="riseModal"><div class="mc" style="--c:#f59e0b" role="dialog" aria-modal="true" aria-labelledby="riseModalTitle" tabindex="-1">
+  <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" onclick="closeModal('rise')">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
   <div class="lenmsg err" id="rise_topic_msg" aria-live="polite"></div>
@@ -595,8 +601,8 @@
 </div></div>
 
 <!-- Collaboration (mesh) modal -->
-<div class="modal" id="meshModal"><div class="mc" style="--c:#ec4899">
-  <div class="mh"><h2>🕸️ Collaboration Network</h2><button class="x" onclick="closeModal('mesh')">&times;</button></div>
+<div class="modal" id="meshModal"><div class="mc" style="--c:#ec4899" role="dialog" aria-modal="true" aria-labelledby="meshModalTitle" tabindex="-1">
+  <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" onclick="closeModal('mesh')">&times;</button></div>
   <label>Institution</label>
   <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
   <div class="lenmsg err" id="mesh_org_msg" aria-live="polite"></div>
@@ -1139,9 +1145,59 @@ function save(){localStorage.setItem("bibliovera_form",JSON.stringify({
   ryear_n:$("#read_year_n").value,rcites_n:$("#read_cites_n").value,ricites_n:$("#rise_cites_n").value,
   morg:$("#mesh_org").value}));}
 
-function openModal(k){$("#"+k+"Modal").classList.add("active");}
-function closeModal(k){$("#"+k+"Modal").classList.remove("active");if(k==="mesh")stopMeshSim();}
-document.querySelectorAll(".modal").forEach(m=>m.addEventListener("click",e=>{if(e.target===m){m.classList.remove("active");stopMeshSim();}}));
+// ── Modal dialogs (WAI-ARIA APG "Dialog (Modal)") ───────────────────────────
+// One open path and one close path: the × button, the backdrop and Escape all
+// end in closeModal(), so focus and the inert background cannot drift apart.
+let modalOpener=null;   // the element that had focus when the modal opened
+let modalInerted=[];    // body children this module made inert, undone on close
+const FOCUSABLE='a[href],button,input,select,textarea,[tabindex]';
+// Computed on every use: results and the pin hint change what can take focus.
+function focusablesIn(root){
+  return Array.from(root.querySelectorAll(FOCUSABLE)).filter(el=>
+    !el.disabled&&el.tabIndex>=0&&el.type!=="hidden"&&
+    el.getClientRects().length>0&&getComputedStyle(el).visibility!=="hidden");
+}
+function openModal(k){
+  const m=$("#"+k+"Modal"), mc=m.querySelector(".mc");
+  modalOpener=document.activeElement;
+  m.classList.add("active");
+  for(const el of Array.from(document.body.children)){
+    if(el.tagName==="SCRIPT"||el.tagName==="STYLE"||el.inert) continue;
+    if(el.matches(".modal.active")||el.querySelector(".modal.active")) continue;
+    el.inert=true; modalInerted.push(el);
+  }
+  document.addEventListener("keydown",onModalKey);
+  (focusablesIn(mc)[0]||mc).focus();
+}
+function closeModal(k){
+  $("#"+k+"Modal").classList.remove("active");
+  for(const el of modalInerted) el.inert=false;
+  modalInerted=[];
+  document.removeEventListener("keydown",onModalKey);
+  if(k==="mesh")stopMeshSim();
+  const opener=modalOpener; modalOpener=null;
+  if(opener&&opener.isConnected&&typeof opener.focus==="function") opener.focus();
+}
+document.querySelectorAll(".modal").forEach(m=>m.addEventListener("click",e=>{if(e.target===m)closeModal(m.id.replace(/Modal$/,""));}));
+// The only Escape and Tab listener for modals. openModal adds it and closeModal
+// removes it; one function reference, so it can never be registered twice.
+function onModalKey(e){
+  const m=document.querySelector(".modal.active");
+  if(!m) return;
+  const k=m.id.replace(/Modal$/,"");
+  if(e.key==="Escape"){
+    // A pinned researcher in the network is dismissed first; only the next
+    // Escape closes the modal, so one press never does both.
+    if(k==="mesh"&&meshEscape&&meshEscape()) return;
+    e.preventDefault(); closeModal(k); return;
+  }
+  if(e.key!=="Tab") return;
+  const mc=m.querySelector(".mc"), list=focusablesIn(mc);
+  if(!list.length){ e.preventDefault(); mc.focus(); return; }
+  const first=list[0], last=list[list.length-1], a=document.activeElement;
+  if(e.shiftKey){ if(a===first||a===mc||!mc.contains(a)){ e.preventDefault(); last.focus(); } }
+  else if(a===last||!mc.contains(a)){ e.preventDefault(); first.focus(); }
+}
 
 // Bearer token for the auth layer sitting in front of the API. Read at REQUEST
 // time, never cached at page load: the Supabase client refreshes the access
@@ -1592,6 +1648,7 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
 // ── Collaboration network (D3 force-directed, zoom+pan) ─────────────────────
 let meshSim=null;  // running D3 simulation, so we can stop it on close
 let meshCleanup=null;
+let meshEscape=null;  // set by drawMeshGraph: clears the pin, returns true if one was pinned
 let meshPNG=null;  // set by drawMeshGraph: renders the current view to a PNG
 function stopMeshSim(){ if(meshSim){meshSim.stop();meshSim=null;} if(meshCleanup){meshCleanup();meshCleanup=null;} meshPNG=null; }
 function downloadMeshPNG(){ if(!meshPNG){alert("Map a network first.");return;} meshPNG(); }
@@ -1965,12 +2022,15 @@ function drawMeshGraph(pairs){
       d.x=e.x; d.y=e.y; renderNode(d);
     })
     .on("end",e=>{ if(!dragMoved&&e.subject) pinFocus(e.subject.id); }));
-  function onEscapeKey(e){ if(e.key==="Escape") clearPin(); }
-  document.addEventListener("keydown",onEscapeKey);
-  // Removed again by stopMeshSim(), which runs on redraw and on modal close,
-  // so repeated openings never stack up Escape or resize listeners.
+  // Called by the single modal keydown listener (see closeModal): a pin eats
+  // the Escape, otherwise the modal closes. No listener of its own, so none can
+  // stack up or fire a second time.
+  function onEscapeKey(){ if(!pinnedId) return false; clearPin(); return true; }
+  meshEscape=onEscapeKey;
+  // Released again by stopMeshSim(), which runs on redraw and on modal close,
+  // so repeated openings never stack up resize listeners or a stale hook.
   meshCleanup=()=>{
-    document.removeEventListener("keydown",onEscapeKey);
+    meshEscape=null;
     window.removeEventListener("resize",onMeshResize);
   };
 
