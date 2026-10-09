@@ -49,5 +49,14 @@ const lineCount = (s) => lines.filter((l) => l.includes(s)).length;
 check("A11 glass panel unchanged: backdrop-filter lines " + lineCount("backdrop-filter") + "/13, -webkit-backdrop-filter lines " + lineCount("-webkit-backdrop-filter") + "/10, body::before lines " + lineCount("body::before") + "/1",
   lineCount("backdrop-filter") === 13 && lineCount("-webkit-backdrop-filter") === 10 && lineCount("body::before") === 1);
 
+// Every modal close button is an icon-only "×": it needs an accessible name.
+const closeBtns = count(/<button class="x"/g), closeBtnsLabelled = count(/<button class="x" aria-label="Close"/g);
+check("A12 six <button class=\"x\"> and all six carry aria-label=\"Close\" (" + closeBtnsLabelled + "/" + closeBtns + ")", closeBtns === 6 && closeBtnsLabelled === 6);
+
+// WCAG 1.4.10: card text must wrap, never be hidden. Check the .lb and .sub rules (and any later rule for them).
+const lbSubRules = [...src.matchAll(/[^{}]*\.(?:lb|sub)\b[^{}]*\{[^}]*\}/g)].map((m) => m[0]);
+const ellipsisRules = lbSubRules.filter((r) => /text-overflow\s*:\s*ellipsis/.test(r));
+check("A13 no text-overflow:ellipsis on .lb/.sub (" + lbSubRules.length + " rules checked, " + ellipsisRules.length + " with ellipsis)", lbSubRules.length > 0 && ellipsisRules.length === 0);
+
 console.log((fail ? "FAIL " : "PASS ") + (total - fail) + "/" + total);
 process.exit(fail ? 1 : 0);

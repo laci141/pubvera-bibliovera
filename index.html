@@ -356,6 +356,12 @@
     .auth-btn{font-size:11px;padding:4px 10px}
   }
 
+  /* WCAG 1.4.10 reflow: below 360px the card text no longer fits on one line, so it wraps
+     (the grid track then shrinks with it) instead of widening the page. Never ellipsis: that would hide text. */
+  @media(max-width:359px){
+    .card .lb,.card .sub{white-space:normal;overflow-wrap:anywhere}
+  }
+
   .disclaimer{max-width:1100px;margin:0 auto 2rem;padding:14px 18px;
     background:linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.035));
     border:1px solid rgba(255,255,255,.10);border-radius:16px;
@@ -437,7 +443,7 @@
 
 <!-- Affiliations modal -->
 <div class="modal" id="affModal"><div class="mc" style="--c:#00d4ff" role="dialog" aria-modal="true" aria-labelledby="affModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" onclick="closeModal('aff')">&times;</button></div>
+  <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" aria-label="Close" onclick="closeModal('aff')">&times;</button></div>
   <label>Journal</label>
   <select id="aff_journal">
     <option value="">All Lancet journals</option>
@@ -465,7 +471,7 @@
 
 <!-- Authors modal -->
 <div class="modal" id="authModal"><div class="mc" style="--c:#7c3aed" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" onclick="closeModal('auth')">&times;</button></div>
+  <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" aria-label="Close" onclick="closeModal('auth')">&times;</button></div>
   <label>Institution (substring, optional)</label>
   <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
   <div class="lenmsg err" id="auth_inst_msg" aria-live="polite"></div>
@@ -486,7 +492,7 @@
 
 <!-- Topic Trends (drift) modal -->
 <div class="modal" id="driftModal"><div class="mc" style="--c:#22c55e" role="dialog" aria-modal="true" aria-labelledby="driftModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" onclick="closeModal('drift')">&times;</button></div>
+  <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" aria-label="Close" onclick="closeModal('drift')">&times;</button></div>
   <label>Journal</label>
   <select id="drift_journal">
     <option value="">All Lancet journals</option>
@@ -515,7 +521,7 @@
 
 <!-- Reading List (curate + retraction) modal -->
 <div class="modal" id="readModal"><div class="mc" style="--c:#38bdf8" role="dialog" aria-modal="true" aria-labelledby="readModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" onclick="closeModal('read')">&times;</button></div>
+  <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" aria-label="Close" onclick="closeModal('read')">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
   <div class="lenmsg err" id="read_topic_msg" aria-live="polite"></div>
@@ -556,7 +562,7 @@
 
 <!-- Rising Papers modal -->
 <div class="modal" id="riseModal"><div class="mc" style="--c:#f59e0b" role="dialog" aria-modal="true" aria-labelledby="riseModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" onclick="closeModal('rise')">&times;</button></div>
+  <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" aria-label="Close" onclick="closeModal('rise')">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
   <div class="lenmsg err" id="rise_topic_msg" aria-live="polite"></div>
@@ -602,7 +608,7 @@
 
 <!-- Collaboration (mesh) modal -->
 <div class="modal" id="meshModal"><div class="mc" style="--c:#ec4899" role="dialog" aria-modal="true" aria-labelledby="meshModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" onclick="closeModal('mesh')">&times;</button></div>
+  <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" aria-label="Close" onclick="closeModal('mesh')">&times;</button></div>
   <label>Institution</label>
   <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
   <div class="lenmsg err" id="mesh_org_msg" aria-live="polite"></div>
