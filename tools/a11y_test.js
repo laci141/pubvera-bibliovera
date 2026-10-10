@@ -58,5 +58,12 @@ const lbSubRules = [...src.matchAll(/[^{}]*\.(?:lb|sub)\b[^{}]*\{[^}]*\}/g)].map
 const ellipsisRules = lbSubRules.filter((r) => /text-overflow\s*:\s*ellipsis/.test(r));
 check("A13 no text-overflow:ellipsis on .lb/.sub (" + lbSubRules.length + " rules checked, " + ellipsisRules.length + " with ellipsis)", lbSubRules.length > 0 && ellipsisRules.length === 0);
 
+// WebKit does not focus a <button> on mouse click, so each card passes itself as the opener.
+const cardsWithThis = count(/<button type="button" class="card"[^>]*onclick="openModal\('[a-z]+',this\)"/g);
+check("A14 six card buttons call openModal('<key>',this) (" + cardsWithThis + ")", cardsWithThis === 6);
+
+check("A15 openModal takes an opener and stores opener||document.activeElement",
+  /^function openModal\(\w+,\s*opener\)/.test(open) && open.includes("modalOpener=opener||document.activeElement"));
+
 console.log((fail ? "FAIL " : "PASS ") + (total - fail) + "/" + total);
 process.exit(fail ? 1 : 0);

@@ -422,27 +422,27 @@
 </section>
 
 <section class="bento">
-  <button type="button" class="card" style="--c:#00d4ff" onclick="openModal('aff')">
+  <button type="button" class="card" style="--c:#00d4ff" onclick="openModal('aff',this)">
     <span class="ic">👥</span>
     <span class="tx"><span class="lb">Affiliations</span><span class="sub">Institution growth</span></span>
   </button>
-  <button type="button" class="card" style="--c:#7c3aed" onclick="openModal('auth')">
+  <button type="button" class="card" style="--c:#7c3aed" onclick="openModal('auth',this)">
     <span class="ic">✍️</span>
     <span class="tx"><span class="lb">Authors</span><span class="sub">Ranked by citations</span></span>
   </button>
-  <button type="button" class="card" style="--c:#22c55e" onclick="openModal('drift')">
+  <button type="button" class="card" style="--c:#22c55e" onclick="openModal('drift',this)">
     <span class="ic">📈</span>
     <span class="tx"><span class="lb">Topic Trends</span><span class="sub">Rising &amp; fading themes</span></span>
   </button>
-  <button type="button" class="card" style="--c:#38bdf8" onclick="openModal('read')">
+  <button type="button" class="card" style="--c:#38bdf8" onclick="openModal('read',this)">
     <span class="ic">📚</span>
     <span class="tx"><span class="lb">Reading List</span><span class="sub">Ranked + retraction-checked</span></span>
   </button>
-  <button type="button" class="card" style="--c:#f59e0b" onclick="openModal('rise')">
+  <button type="button" class="card" style="--c:#f59e0b" onclick="openModal('rise',this)">
     <span class="ic">🚀</span>
     <span class="tx"><span class="lb">Rising Papers</span><span class="sub">Fastest-cited fresh work</span></span>
   </button>
-  <button type="button" class="card" style="--c:#ec4899" onclick="openModal('mesh')">
+  <button type="button" class="card" style="--c:#ec4899" onclick="openModal('mesh',this)">
     <span class="ic">🕸️</span>
     <span class="tx"><span class="lb">Collaboration</span><span class="sub">Co-authorship network</span></span>
   </button>
@@ -1170,9 +1170,9 @@ function focusablesIn(root){
     !el.disabled&&el.tabIndex>=0&&el.type!=="hidden"&&
     el.getClientRects().length>0&&getComputedStyle(el).visibility!=="hidden");
 }
-function openModal(k){
+function openModal(k,opener){
   const m=$("#"+k+"Modal"), mc=m.querySelector(".mc");
-  modalOpener=document.activeElement;
+  modalOpener=opener||document.activeElement;
   m.classList.add("active");
   for(const el of Array.from(document.body.children)){
     if(el.tagName==="SCRIPT"||el.tagName==="STYLE"||el.inert) continue;
