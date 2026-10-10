@@ -362,6 +362,13 @@
     .card .lb,.card .sub{white-space:normal;overflow-wrap:anywhere}
   }
 
+  /* Desktop 769-1379px: three fixed columns plus nowrap labels overflow the page. Here the grid
+     auto-fits (1 column to 940px, 2 from 941px) and the labels wrap. 1380px and up keeps the 3-column design. */
+  @media(min-width:769px) and (max-width:1379px){
+    .bento{grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}
+    .card .lb,.card .sub{white-space:normal;overflow-wrap:break-word}
+  }
+
   .disclaimer{max-width:1100px;margin:0 auto 2rem;padding:14px 18px;
     background:linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.035));
     border:1px solid rgba(255,255,255,.10);border-radius:16px;
