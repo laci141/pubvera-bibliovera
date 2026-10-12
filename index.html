@@ -202,9 +202,20 @@
      paragraph: they carry a heading, an explanation and — for a signed-out
      visitor — a sign-in button. Same glass recipe as .card, so nothing new is
      introduced visually. */
-  .errcard{background:linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.045));
+  .errcard,.mesh-groups{background:linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.045));
     border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 18px;
-    backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
+    backdrop-filter:blur(var(--mg-blur,15px));-webkit-backdrop-filter:blur(var(--mg-blur,15px))}
+  /* Groups panel of the collaboration network: it shares the glass recipe of .errcard above (the
+     blur is 15px, 12px under 600px via --mg-blur), so the glass-panel line count stays what it was. */
+  .mesh-groups{margin-top:.4rem;padding:8px 14px}
+  .mesh-groups summary{cursor:pointer;font-weight:800;color:#e8eef7;font-size:.975rem;line-height:1.5;padding:4px 0}
+  .mesh-groups .mg-list{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.5rem}
+  .mesh-groups .mg-btn{font:inherit;font-size:.9rem;font-weight:700;color:#e8eef7;cursor:pointer;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 14px}
+  .mesh-groups .mg-btn:hover{border-color:rgba(255,255,255,.4)}
+  .mesh-groups .mg-btn[aria-pressed="true"]{background:rgba(255,255,255,.2);border-color:#fff}
+  .mesh-groups .mg-btn:focus-visible,.mesh-groups summary:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  .mesh-groups .mg-more{margin:.5rem 0 0;font-size:.85rem;color:rgba(255,255,255,.5)}
   .errcard h4{font-size:1rem;font-weight:700;color:#e8eef7;margin-bottom:.3rem}
   .errcard p{font-size:.86rem;color:#aab;line-height:1.5}
   /* .btn is full-width by default (it is a form's submit button everywhere
@@ -379,6 +390,9 @@
     table.vel .cpy{display:none}   /* Rising: Velocity replaces Cites/yr on phones, same column count as before */
     .disclaimer{margin:0 1rem 1.5rem;padding:12px 14px;border-radius:14px;
       backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);font-size:.68rem}
+    .mesh-groups{--mg-blur:12px}
+    .mesh-groups summary,.mesh-groups .mg-btn{min-height:44px;min-width:44px}
+    .mesh-groups summary{display:flex;align-items:center}
   }
 </style>
 </head>
@@ -1163,7 +1177,7 @@ function save(){localStorage.setItem("bibliovera_form",JSON.stringify({
 // end in closeModal(), so focus and the inert background cannot drift apart.
 let modalOpener=null;   // the element that had focus when the modal opened
 let modalInerted=[];    // body children this module made inert, undone on close
-const FOCUSABLE='a[href],button,input,select,textarea,[tabindex]';
+const FOCUSABLE='a[href],button,input,select,textarea,summary,[tabindex]';
 // Computed on every use: results and the pin hint change what can take focus.
 function focusablesIn(root){
   return Array.from(root.querySelectorAll(FOCUSABLE)).filter(el=>
@@ -1202,6 +1216,8 @@ function onModalKey(e){
     // A pinned researcher in the network is dismissed first; only the next
     // Escape closes the modal, so one press never does both.
     if(k==="mesh"&&meshEscape&&meshEscape()) return;
+    // Then a selected group in the network; only after both does the modal close.
+    if(k==="mesh"&&meshGroupEscape&&meshGroupEscape()) return;
     e.preventDefault(); closeModal(k); return;
   }
   if(e.key!=="Tab") return;
@@ -1662,6 +1678,7 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
 let meshSim=null;  // running D3 simulation, so we can stop it on close
 let meshCleanup=null;
 let meshEscape=null;  // set by drawMeshGraph: clears the pin, returns true if one was pinned
+let meshGroupEscape=null;  // set by drawMeshGraph: clears the selected group, returns true if one was selected
 let meshPNG=null;  // set by drawMeshGraph: renders the current view to a PNG
 function stopMeshSim(){ if(meshSim){meshSim.stop();meshSim=null;} if(meshCleanup){meshCleanup();meshCleanup=null;} meshPNG=null; }
 function downloadMeshPNG(){ if(!meshPNG){alert("Map a network first.");return;} meshPNG(); }
@@ -1683,6 +1700,7 @@ async function runMesh(){
     if(!pairs.length){res.innerHTML='<p class="meta">No co-authorship pairs found for "'+esc(org)+'". Try a broader institution name.</p>';return;}
     const authorCount=new Set(pairs.flatMap(p=>[p.author_a,p.author_b])).size;
     res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json','<button class="dl" title="The graph as shown, plus the co-author list when a researcher is pinned" onclick="downloadMeshPNG()">⬇ PNG</button>')+
+      '<details class="mesh-groups" id="meshGroups"><summary>Groups (0)</summary><div id="meshGroupsBody"></div></details>'+
       '<div class="graph-wrap" id="graphWrap"></div>'+
       '<div class="zoom-hint" id="zoomHint">'+
         '<span><b>Click</b> a researcher to pin · <b>Esc</b> or click empty space to clear · <b>Scroll</b> to zoom</span>'+
@@ -1729,6 +1747,102 @@ function meshTiers(degrees){
   });
 }
 
+// Groups of authors: Louvain modularity on the undirected graph (link weight =
+// shared works), then every community is split into its connected components,
+// because Louvain can return a community that is not connected (Traag et al.
+// 2019). Deterministic: nodes are visited in id order, ties go to the lowest
+// community index, nothing is random. Pure: no DOM. links may carry ids or the
+// node objects d3 puts there. Returns [{id, members:[ids], top}], biggest first;
+// top is the member with the most co-authors in the whole graph.
+function meshCommunities(nodes,links){
+  const ids=nodes.map(n2=>n2.id).sort((a,b)=>a<b?-1:a>b?1:0);
+  const idx=new Map(ids.map((id,i)=>[id,i]));
+  const ref=v=>(v&&typeof v==="object")?v.id:v;
+  const adj=ids.map(()=>new Map());
+  for(const l of links){
+    const a=idx.get(ref(l.source)), b=idx.get(ref(l.target));
+    if(a===undefined||b===undefined||a===b) continue;
+    const w=Number(l.weight)>0?Number(l.weight):1;
+    adj[a].set(b,(adj[a].get(b)||0)+w); adj[b].set(a,(adj[b].get(a)||0)+w);
+  }
+  // Louvain: move nodes between communities while modularity rises, then fold
+  // each community into one node and repeat on that smaller graph.
+  let cur=adj, member=ids.map((_,i)=>i);
+  for(;;){
+    const m=cur.length, comm=cur.map((_,i)=>i);
+    const k=cur.map(row=>{ let s=0; for(const w of row.values()) s+=w; return s; });
+    const twoM=k.reduce((s,x)=>s+x,0);
+    if(!twoM) break;
+    const tot=k.slice();
+    let moved=false, improved=true, pass=0;
+    while(improved&&pass++<100){
+      improved=false;
+      for(let i=0;i<m;i++){
+        const ci=comm[i], wc=new Map();
+        for(const [j,w] of cur[i]){ if(j===i) continue; wc.set(comm[j],(wc.get(comm[j])||0)+w); }
+        tot[ci]-=k[i];
+        let best=ci, bestGain=(wc.get(ci)||0)-tot[ci]*k[i]/twoM;
+        for(const c of [...wc.keys()].sort((a,b)=>a-b)){
+          const gain=wc.get(c)-tot[c]*k[i]/twoM;
+          if(gain>bestGain+1e-12){ bestGain=gain; best=c; }
+        }
+        tot[best]+=k[i];
+        if(best!==ci){ comm[i]=best; improved=true; moved=true; }
+      }
+    }
+    if(!moved) break;
+    const remap=new Map();
+    comm.forEach(c=>{ if(!remap.has(c)) remap.set(c,remap.size); });
+    member=member.map(x=>remap.get(comm[x]));
+    const next=Array.from({length:remap.size},()=>new Map());
+    for(let i=0;i<m;i++){
+      const ci=remap.get(comm[i]);
+      for(const [j,w] of cur[i]){ const cj=remap.get(comm[j]); next[ci].set(cj,(next[ci].get(cj)||0)+w); }
+    }
+    cur=next;
+  }
+  // Split every community into connected components, walking the original graph.
+  const seen=new Array(ids.length).fill(false), groups=[];
+  for(let s=0;s<ids.length;s++){
+    if(seen[s]) continue;
+    const part=[s], stack=[s]; seen[s]=true;
+    while(stack.length){
+      const v=stack.pop();
+      for(const u of adj[v].keys()){
+        if(!seen[u]&&member[u]===member[s]){ seen[u]=true; part.push(u); stack.push(u); }
+      }
+    }
+    part.sort((a,b)=>a-b);
+    let top=part[0];
+    for(const v of part) if(adj[v].size>adj[top].size) top=v;
+    groups.push({members:part.map(v=>ids[v]),top:ids[top]});
+  }
+  groups.sort((a,b)=>b.members.length-a.members.length||(a.top<b.top?-1:a.top>b.top?1:0));
+  groups.forEach((g,i)=>{ g.id=i; });
+  return groups;
+}
+
+// Labels that do not collide, VOSviewer style. boxes are screen-space
+// rectangles [{id, priority, x, y, w, h}]; they are taken highest priority
+// first (ties: lower id), and one is kept only when it stays clear of every box
+// already kept by at least 1 px. Returns the Set of kept ids. Pure: no DOM.
+function pickVisibleLabels(boxes){
+  const order=[...boxes].sort((a,b)=>b.priority-a.priority||(a.id<b.id?-1:a.id>b.id?1:0));
+  const kept=[], ids=new Set(), pad=1;
+  for(const b of order){
+    if(kept.some(o=>b.x-pad<o.x+o.w&&o.x<b.x+b.w+pad&&b.y-pad<o.y+o.h&&o.y<b.y+b.h+pad)) continue;
+    kept.push(b); ids.add(b.id);
+  }
+  return ids;
+}
+
+// On-screen font size of a name in px, the same at every zoom: 13 px on a phone
+// (viewport <= 600 px), 15 px otherwise; tier 1 (top 5%) +2, tier 2 +1. Pure.
+function labelFontPx(tier,viewportW){
+  const base=viewportW<=600?13:15;
+  return base+(tier===1?2:tier===2?1:0);
+}
+
 function drawMeshGraph(pairs){
   // Tuned for the 500-pair limit (measured: Oxford at limit=500 -> 500 pairs).
   // The old constants (charge -560, link distance 85-130, fixed 22px labels,
@@ -1754,18 +1868,18 @@ function drawMeshGraph(pairs){
   // One tier per author drives all three channels at once: radius, colour and
   // whether the label survives at low zoom.
   meshTiers(nodes.map(n2=>n2.deg)).forEach((t,i)=>{nodes[i].tier=t;});
+  const groups=meshCommunities(nodes,links);
 
   // Label size follows density: 22px while the graph is small, 11px from 160
   // nodes up, linear in between — at 500 pairs fixed 22px labels overlap into
   // an unreadable block.
   const labelPx=Math.max(11,Math.min(22,22-(n-20)*(11/140)));
-  // Label size is an absolute on-screen size per tier, not a density curve:
-  // the density curve plus the zoom divide left names at ~8px. Raised 30% on
-  // the user's read of the live graph (16/14/13 -> 21/18/17), then 60% more
-  // on the same read (21/18/17 -> 34/29/27). labelPx survives only because
-  // collide still measures label width with it.
-  const labelSize=[27,34,29,27];
-  const labelHalo=t=>labelSize[t]*(6/22);
+  // Label size is an absolute on-screen size per tier (labelFontPx), not a
+  // density curve: the density curve plus the zoom divide left names at ~8px.
+  // 27-34 px kept only 4 names on a 360 px phone, so the target is now 13-17 px.
+  // labelPx survives only because collide still measures label width with it.
+  const fontPx=d=>labelFontPx(d.tier,window.innerWidth);
+  const labelHalo=px=>px*(6/22);
   // Size is the tier and nothing else: link strength no longer touches it.
   const rBase=9;
   const radius=n2=>rBase*MESH_TIER_SCALE[n2.tier];
@@ -1785,7 +1899,7 @@ function drawMeshGraph(pairs){
     viewS=rw>0?rw/W:1;
   }
   measureViewScale();
-  function onMeshResize(){ measureViewScale(); applyZoomScale(zoomK); }
+  function onMeshResize(){ measureViewScale(); scheduleLabels(); }
   window.addEventListener("resize",onMeshResize);
 
   // Zoom container: every element goes into this <g>, and the zoom transforms it.
@@ -1801,7 +1915,7 @@ function drawMeshGraph(pairs){
     .filter(e=>e.type==="mousedown"||e.type==="touchstart"
       ?(!e.button&&!candidate)
       :(!e.ctrlKey&&!e.button))
-    .on("zoom",e=>{zoomG.attr("transform",e.transform);applyZoomScale(e.transform.k);applyLabelVis(e.transform.k);});
+    .on("zoom",e=>{zoomG.attr("transform",e.transform);zoomK=e.transform.k;scheduleLabels();});
   svg.call(zoom).on("dblclick.zoom",null);
   svg.on("dblclick",()=>svg.transition().duration(450).call(zoom.transform,d3.zoomIdentity));
 
@@ -1863,24 +1977,64 @@ function drawMeshGraph(pairs){
   // Shortened label: max 16 characters — the full name is in the hover tooltip.
   const label=zoomG.append("g").selectAll("text").data(nodes).join("text")
     .attr("class","glabel").attr("dx",16).attr("dy",7)
-    .style("font-size",d=>labelSize[d.tier]+"px")
-    .style("stroke-width",d=>labelHalo(d.tier)+"px")
+    .style("font-size",d=>fontPx(d)+"px")
+    .style("stroke-width",d=>labelHalo(fontPx(d))+"px")
     .text(n2=>n2.id.length>16?n2.id.slice(0,14)+"…":n2.id);
 
-  // Zoomed out, only the two top tiers keep a label; zooming past 1.5 brings
-  // every name back. A hover overrides the zoom for the hovered node and its
-  // neighbours, so a cluster can be read without zooming into it.
+  // Which names show is decided by collision, not by tier: pickVisibleLabels
+  // keeps the best-connected authors whose names do not overlap on screen, and
+  // the rest get visibility:hidden (not removed), so zooming in reveals more.
+  // A hover or a pin overrides this for the focused node and its neighbours,
+  // so a cluster can be read without zooming into it.
   let zoomK=1, forcedLabels=null;
   let pinnedId=null, hoverTimer=null, leaveTimer=null;
   let dragFrom=[0,0], dragMoved=false, svgFrom=null;
+  let keptLabels=new Set(), labelRaf=0;
+  let selGroup=null;   // the selected group: {id, members, set}, or null
   function applyLabelVis(k){
     if(k!==undefined) zoomK=k;
     // While a researcher is focused (hover preview or pin) only they and
     // their co-authors keep a name: the faded names of everyone else were
     // noise behind the ones being read.
-    label.style("display",d=>forcedLabels
-      ?(forcedLabels.has(d.id)?null:"none")
-      :((zoomK>=1.5||d.tier===1||d.tier===2)?null:"none"));
+    label.style("display",d=>forcedLabels&&!forcedLabels.has(d.id)?"none":null)
+      .style("visibility",d=>forcedLabels||keptLabels.has(d.id)?null:"hidden");
+  }
+  // Screen-space box of one name, measured, not estimated: getBBox() of the
+  // real text (it works on visibility:hidden text; only display:none has no
+  // box) plus the stroke halo. Its size and its offset from the node are kept in
+  // screen px per id, which stay the same at every zoom because the font size is
+  // a constant on-screen size; the cache is dropped when the font px or the text
+  // changes. The candidates are every node, or the selected group's members.
+  const boxCache=new Map();
+  function updateLabels(){
+    const t=d3.zoomTransform(svg.node()), vw=W*viewS, vh=H*viewS, ks=t.k*viewS;
+    applyZoomScale(t.k);   // all writes first, then the reads below
+    // Names of a focused researcher's neighbours are the only ones displayed
+    // then; applyFocus(null) measures again once the others are back.
+    if(forcedLabels) return;
+    const els=label.nodes(), boxes=[];
+    nodes.forEach((d,i)=>{
+      if(selGroup&&!selGroup.set.has(d.id)) return;
+      const fs=fontPx(d), text=els[i].textContent;
+      let c=boxCache.get(d.id);
+      if(!c||c.fs!==fs||c.text!==text){
+        let bb;
+        try{ bb=els[i].getBBox(); }catch(_){ boxCache.delete(d.id); return; }
+        const halo=(parseFloat(els[i].style.strokeWidth)||0)*ks;
+        c={fs,text,w:bb.width*ks+halo,h:bb.height*ks+halo,ox:(bb.x-d.x)*ks-halo/2,oy:(bb.y-d.y)*ks-halo/2};
+        boxCache.set(d.id,c);
+      }
+      const x=(t.x+t.k*d.x)*viewS+c.ox, y=(t.y+t.k*d.y)*viewS+c.oy;
+      if(x+c.w<0||x>vw||y+c.h<0||y>vh) return;
+      boxes.push({id:d.id,priority:d.deg,x,y,w:c.w,h:c.h});
+    });
+    keptLabels=pickVisibleLabels(boxes);
+    applyLabelVis();
+  }
+  // One run per animation frame, however many zoom, resize or drag events ask.
+  function scheduleLabels(){
+    if(labelRaf) return;
+    labelRaf=requestAnimationFrame(()=>{ labelRaf=0; updateLabels(); });
   }
 
   // Labels and nodes sit inside the zoomed <g>, so the transform shrinks them
@@ -1908,8 +2062,8 @@ function drawMeshGraph(pairs){
     if(!(ks>0)||!(rs>0)) return;
     applyNodeStyle();
     label.attr("dx",16/ks).attr("dy",7/ks)
-      .style("font-size",d=>(labelSize[d.tier]/ks)+"px")
-      .style("stroke-width",d=>(labelHalo(d.tier)/ks)+"px");
+      .style("font-size",d=>(fontPx(d)/ks)+"px")
+      .style("stroke-width",d=>(labelHalo(fontPx(d))/ks)+"px");
   }
 
   // Layout: a weak x/y force pulls even the lonely pairs towards the centre,
@@ -1971,6 +2125,7 @@ function drawMeshGraph(pairs){
   const tx=W/2-k*(x0+x1)/2, ty=H/2-k*(y0+y1)/2;
   svg.call(zoom.transform,d3.zoomIdentity.translate(tx,ty).scale(k));
   applyZoomScale(k);
+  updateLabels();
 
   // Hover focus: built from the RESOLVED links, so source/target are the node
   // objects the simulation produced, not the original id strings.
@@ -1986,10 +2141,12 @@ function drawMeshGraph(pairs){
   // the pointer changes nothing.
   function applyFocus(id){
     if(!id){
-      forcedLabels=null; applyLabelVis();
-      node.style("opacity",null);
-      label.style("opacity",null);
-      link.style("stroke-opacity",null);
+      forcedLabels=null; applyLabelVis(); updateLabels();
+      // No focus: the whole graph, or the selected group alone (same dimming as below).
+      const inG=d=>!selGroup||selGroup.set.has(d.id);
+      node.style("opacity",selGroup?o=>inG(o)?1:.15:null);
+      label.style("opacity",selGroup?o=>inG(o)?1:.15:null);
+      link.style("stroke-opacity",selGroup?l=>(inG(l.source)&&inG(l.target))?null:.03:null);
       return;
     }
     const near=neighbours.get(id);
@@ -2034,16 +2191,69 @@ function drawMeshGraph(pairs){
       if(!dragMoved||!d) return;
       d.x=e.x; d.y=e.y; renderNode(d);
     })
-    .on("end",e=>{ if(!dragMoved&&e.subject) pinFocus(e.subject.id); }));
+    .on("end",e=>{ if(dragMoved) scheduleLabels(); else if(e.subject) pinFocus(e.subject.id); }));
   // Called by the single modal keydown listener (see closeModal): a pin eats
   // the Escape, otherwise the modal closes. No listener of its own, so none can
   // stack up or fire a second time.
   function onEscapeKey(){ if(!pinnedId) return false; clearPin(); return true; }
   meshEscape=onEscapeKey;
+
+  // Groups panel: one button per group of 3+ authors (at most 12), under a
+  // closed <details> above the graph. A selected group keeps its members at
+  // full strength, dims the rest the way a pin does, flies the view to the
+  // group and limits the label candidates to its members. Colours stay tiers.
+  const GROUP_MIN=3, GROUP_MAX=12;
+  const listed=groups.filter(g=>g.members.length>=GROUP_MIN);
+  const shown=listed.slice(0,GROUP_MAX);
+  const groupsEl=$("#meshGroups"), groupsBody=$("#meshGroupsBody");
+  function syncGroupButtons(){
+    if(!groupsBody) return;
+    groupsBody.querySelectorAll("button[data-group]").forEach(b=>{
+      if(b.getAttribute("data-group")==="all") return;
+      b.setAttribute("aria-pressed",selGroup&&String(selGroup.id)===b.getAttribute("data-group")?"true":"false");
+    });
+  }
+  function clearGroup(){
+    if(!selGroup) return false;
+    selGroup=null; applyFocus(pinnedId); syncGroupButtons(); updateLabels();
+    return true;
+  }
+  function selectGroup(id){
+    const g=groups.find(o=>o.id===id);
+    if(!g) return;
+    if(selGroup&&selGroup.id===id){ clearGroup(); return; }
+    selGroup={id:g.id,members:g.members,set:new Set(g.members)};
+    applyFocus(pinnedId); syncGroupButtons(); updateLabels();
+    // Fly to the group's bounding box: the same padding as the first fit.
+    const mem=nodes.filter(d=>selGroup.set.has(d.id));
+    const gx0=Math.min(...mem.map(d=>d.x))-pad, gx1=Math.max(...mem.map(d=>d.x))+pad;
+    const gy0=Math.min(...mem.map(d=>d.y))-pad, gy1=Math.max(...mem.map(d=>d.y))+pad;
+    const gk=Math.max(0.1,Math.min(2.5,0.9*Math.min(W/Math.max(gx1-gx0,1),H/Math.max(gy1-gy0,1))));
+    svg.transition().duration(450).call(zoom.transform,
+      d3.zoomIdentity.translate(W/2-gk*(gx0+gx1)/2,H/2-gk*(gy0+gy1)/2).scale(gk));
+  }
+  meshGroupEscape=clearGroup;
+  if(groupsEl&&groupsBody){
+    groupsEl.querySelector("summary").textContent="Groups ("+listed.length+")";
+    const left=groups.length-shown.length;
+    groupsBody.innerHTML=listed.length
+      ?'<div class="mg-list"><button type="button" class="mg-btn" data-group="all">All</button>'+
+        shown.map(g=>'<button type="button" class="mg-btn" data-group="'+g.id+'" aria-pressed="false">'+
+          esc(g.top)+' + '+(g.members.length-1)+'</button>').join('')+'</div>'+
+        (left?'<p class="mg-more">'+left+' smaller group'+(left===1?'':'s')+' not listed</p>':'')
+      :'<p class="mg-more">No group of 3 or more authors in this network.</p>';
+    groupsBody.onclick=e=>{
+      const b=e.target.closest("button[data-group]");
+      if(!b) return;
+      if(b.getAttribute("data-group")==="all") clearGroup();
+      else selectGroup(Number(b.getAttribute("data-group")));
+    };
+  }
   // Released again by stopMeshSim(), which runs on redraw and on modal close,
   // so repeated openings never stack up resize listeners or a stale hook.
   meshCleanup=()=>{
-    meshEscape=null;
+    meshEscape=null; meshGroupEscape=null;
+    cancelAnimationFrame(labelRaf); labelRaf=0;
     window.removeEventListener("resize",onMeshResize);
   };
 
@@ -2086,7 +2296,7 @@ function drawMeshGraph(pairs){
     if(!(w>0&&h>0)) return;
     const clone=src.cloneNode(true);
     const props=["fill","fill-opacity","stroke","stroke-width","stroke-opacity","stroke-linecap",
-      "stroke-linejoin","paint-order","opacity","display","font-family","font-size","font-weight","letter-spacing"];
+      "stroke-linejoin","paint-order","opacity","display","visibility","font-family","font-size","font-weight","letter-spacing"];
     const from=src.querySelectorAll("*"), to=clone.querySelectorAll("*");
     for(let i=0;i<from.length;i++){
       const cs=getComputedStyle(from[i]);
