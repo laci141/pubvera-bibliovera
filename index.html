@@ -256,6 +256,11 @@
   .badge-ok{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.30);
     padding:2px 10px;border-radius:999px;font-size:.72rem;font-weight:600;white-space:nowrap}
   .badge-checking{color:#889;font-size:.72rem;font-style:italic}
+  .retry-check{margin-left:.4rem;background:none;border:1px solid rgba(255,255,255,.3);color:#cde;font:inherit;
+    font-size:.72rem;padding:1px 9px;border-radius:999px;cursor:pointer}
+  .retry-check:hover:not(:disabled){border-color:#00d4ff;color:#fff}
+  .retry-check:focus-visible{outline:2px solid #00d4ff;outline-offset:2px}
+  .retry-check:disabled{opacity:.5;cursor:default}
   /* Expression of concern: amber, the .badge-low palette. #ffd28a on the badge
      fill (rgba(255,190,80,.15) over the #0b1020 page) is ~10:1, ~7.4:1 on a lighter glass panel. */
   .badge-concern{background:rgba(255,190,80,.15);color:#ffd28a;border:1px solid rgba(255,190,80,.35);
@@ -1272,6 +1277,7 @@ async function authHeaders(){
 // Shared response reader for both fetch helpers. A non-2xx response becomes an
 // Error carrying the status and the parsed body, so a module's catch block can
 // tell an auth or quota rejection from an ordinary CLI failure (see errorHTML).
+// retryAfter is the raw Retry-After header (string) or null; checkRetractions reads it.
 // The auth layer in front of the API is not guaranteed to answer with JSON, so
 // a body that will not parse must still yield a status-bearing error rather
 // than the generic "Non-JSON response" one.
@@ -1285,6 +1291,7 @@ async function readJSON(r){
       : ("Non-JSON response (HTTP "+r.status+")"));
     e.status=r.status;
     e.data=parsed?d:null;
+    e.retryAfter=r.headers&&typeof r.headers.get==="function"?r.headers.get("Retry-After"):null;
     throw e;
   }
   if(!parsed) throw new Error("Non-JSON response (HTTP "+r.status+")");
@@ -2419,6 +2426,53 @@ function concernFields(res){
     concern_notice_doi:concern&&typeof res.concern_notice_doi==="string"?res.concern_notice_doi.trim():""
   };
 }
+// One bounded automatic retry per row, for HTTP 503 and 429 only. The auth
+// server in front of /check already retries once, so the client adds at most
+// ONE more attempt (nested retries multiply load). /check is read-only, so a
+// repeat is safe. Wait = Retry-After seconds capped at 5 s, else a random
+// 750-2000 ms. Timeouts, network errors, other 4xx/5xx and a 200 body with
+// "error" are never retried.
+const CHECK_MAX_RETRIES=1;
+const CHECK_RETRY_MIN_MS=750, CHECK_RETRY_MAX_MS=2000, CHECK_RETRY_CAP_MS=5000;
+function checkRetryDelay(e){
+  const ra=e&&e.retryAfter!=null?String(e.retryAfter).trim():"";
+  if(/^\d+(\.\d+)?$/.test(ra))return Math.min(Number(ra)*1000,CHECK_RETRY_CAP_MS);
+  return Math.round(CHECK_RETRY_MIN_MS+Math.random()*(CHECK_RETRY_MAX_MS-CHECK_RETRY_MIN_MS));
+}
+// true once the full delay has passed, false if the run was aborted first.
+function waitUnlessAborted(ms,signal){
+  return new Promise(resolve=>{
+    if(signal.aborted){resolve(false);return;}
+    const onAbort=()=>{clearTimeout(t);resolve(false);};
+    const t=setTimeout(()=>{signal.removeEventListener("abort",onAbort);resolve(true);},ms);
+    signal.addEventListener("abort",onAbort,{once:true});
+  });
+}
+async function fetchCheck(doi,signal,onRetryWait){
+  const url="/check?doi="+encodeURIComponent(doi);
+  for(let attempt=0;;attempt++){
+    try{
+      return await fetchJSONTimeout(url,20000,signal);
+    }catch(e){
+      if(!e||(e.status!==503&&e.status!==429)||attempt>=CHECK_MAX_RETRIES)throw e;
+      onRetryWait();
+      if(!await waitUnlessAborted(checkRetryDelay(e),signal))throw e;
+    }
+  }
+}
+function retryButtonHTML(i,disabled){
+  return '<button type="button" class="retry-check" data-i="'+i+'"'+(disabled?' disabled':'')+
+    ' aria-label="Retry retraction check for row '+(i+1)+'">Retry</button>';
+}
+// Status cell while a check runs; row >= 0 keeps a disabled Retry button (manual check).
+function checkingHTML(label,row){
+  return '<span class="badge-checking">'+label+'</span>'+(row>=0?' '+retryButtonHTML(row,true):'');
+}
+function unverifiedHTML(i){
+  return '<span class="badge-checking">unverified</span> '+retryButtonHTML(i,false);
+}
+// The Retry click handler of the newest run per module (set by checkRetractions).
+const retryRows={read:null,rise:null};
 async function checkRetractions(papers,store,prefix,mod,runId){
   const current=()=>runId===retractionRun[mod];
   if(!current())return;
@@ -2434,6 +2488,10 @@ async function checkRetractions(papers,store,prefix,mod,runId){
     row.concern_notice_doi="";
   });
   const todo=queue.filter(x=>x.doi);
+  const setCell=(i,html)=>{
+    if(!current())return;
+    const cell=$("#"+prefix+i); if(cell)cell.innerHTML=html;
+  };
   const finish=(i,status,html,concern)=>{
     if(!current())return;
     const row=store[i];
@@ -2441,28 +2499,39 @@ async function checkRetractions(papers,store,prefix,mod,runId){
       row.retraction_status=status;row.retraction_checked_at=new Date().toISOString();
       if(concern)Object.assign(row,concern);
     }
-    const cell=$("#"+prefix+i); if(cell)cell.innerHTML=html;
+    setCell(i,html);
   };
-  let active=0, idx=0;
-  return new Promise(resolve=>{
-    function next(){
-      if(idx>=todo.length && active===0){resolve();return;}
-      while(active<4 && idx<todo.length){
-        const {i,doi}=todo[idx++]; active++;
-        fetchJSONTimeout("/check?doi="+encodeURIComponent(doi),20000,signal)
-          .then(res=>{
-            if(res && res.retracted===true){
-              finish(i,"retracted",statusBadgeHTML(res),concernFields(res));
-            }else if(res && res.error){
-              finish(i,"unverified",'<span class="badge-checking">unverified</span>');
-            }else{
-              finish(i,"no_retraction_found",statusBadgeHTML(res||{}),concernFields(res||{}));
-            }
-          })
-          .catch(()=>finish(i,"unverified",'<span class="badge-checking">unverified</span>'))
-          .finally(()=>{active--;next();});
-      }
+  const checkRow=({i,doi,manual})=>
+    fetchCheck(doi,signal,()=>setCell(i,checkingHTML("retrying…",manual?i:-1)))
+      .then(res=>{
+        if(res && res.retracted===true){
+          finish(i,"retracted",statusBadgeHTML(res),concernFields(res));
+        }else if(res && res.error){
+          finish(i,"unverified",unverifiedHTML(i));
+        }else{
+          finish(i,"no_retraction_found",statusBadgeHTML(res||{}),concernFields(res||{}));
+        }
+      })
+      .catch(()=>finish(i,"unverified",unverifiedHTML(i)));
+  // A manual Retry joins the same queue, so retries and manual checks count
+  // toward the 4 requests in flight.
+  let active=0, idx=0, done=()=>{};
+  function next(){
+    if(idx>=todo.length && active===0){done();return;}
+    while(active<4 && idx<todo.length){
+      const entry=todo[idx++]; active++;
+      checkRow(entry).finally(()=>{active--;next();});
     }
+  }
+  retryRows[mod]={retry(i){
+    const q=queue[i];
+    if(!current()||!q||!q.doi)return;
+    setCell(i,checkingHTML("checking…",i));
+    todo.push({i,doi:q.doi,manual:true});
+    next();
+  }};
+  return new Promise(resolve=>{
+    done=resolve;
     if(!todo.length){resolve();return;}
     next();
   });
@@ -2493,6 +2562,18 @@ document.addEventListener("input",e=>{
     r.style.display=(!q||r.textContent.toLowerCase().includes(q))?"":"none";
   });
   updateQcount(res);
+});
+
+// Delegated Retry button in a status cell (Reading List "st-<i>", Rising Papers
+// "rst-<i>"): one listener, no inline onclick. A click from a run that is no
+// longer current is ignored inside retry().
+document.addEventListener("click",ev=>{
+  const b=ev.target.closest("button.retry-check");
+  if(!b||b.disabled)return;
+  const td=b.closest("td"), m=td&&/^(r?)st-\d+$/.exec(td.id||"");
+  if(!m)return;
+  const ctx=retryRows[m[1]?"rise":"read"];
+  if(ctx)ctx.retry(Number(b.getAttribute("data-i")));
 });
 
 // ── Export menu (WAI-ARIA APG "Menu Button") ────────────────────────────────
