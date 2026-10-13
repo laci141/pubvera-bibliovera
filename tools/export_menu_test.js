@@ -88,5 +88,11 @@ const outside = at < 0 ? "" : src.slice(at, src.indexOf(String.fromCharCode(10),
 check("E9 outside click closes without refocus and ignores untrusted clicks (the download anchor click)",
   outside.includes("e.isTrusted") && outside.includes('.closest(".dl-wrap")') && outside.includes("closeExportMenus(false)"));
 
+// The panel must hide the table text under it: the .dl-menu background is one colour with alpha >= 0.9.
+const bgRule = rules.filter((r) => r.sel.includes(".dl-menu")).map((r) => (r.body.match(/(?:^|[;\s])background(?:-color)?:\s*([^;]+)/) || [])[1]).filter(Boolean).pop() || "";
+const bgM = bgRule.match(/^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*([\d.]+)\s*)?\)$/) || bgRule.match(/^#[0-9a-f]{6}$/i);
+const bgAlpha = bgM ? (bgM[1] === undefined ? 1 : parseFloat(bgM[1])) : 0;
+check("E10 .dl-menu background is a solid colour or rgba with alpha >= 0.9 (\"" + bgRule + "\", alpha " + bgAlpha + ")", bgAlpha >= 0.9);
+
 console.log(`\n${total - fail}/${total} passed`);
 process.exit(fail ? 1 : 0);
