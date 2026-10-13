@@ -202,12 +202,23 @@
      paragraph: they carry a heading, an explanation and — for a signed-out
      visitor — a sign-in button. Same glass recipe as .card, so nothing new is
      introduced visually. */
-  .errcard,.mesh-groups{background:linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.045));
+  .errcard,.mesh-groups,.dl-menu{background:linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.045));
     border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 18px;
     backdrop-filter:blur(var(--mg-blur,15px));-webkit-backdrop-filter:blur(var(--mg-blur,15px))}
   /* Groups panel of the collaboration network: it shares the glass recipe of .errcard above (the
      blur is 15px, 12px under 600px via --mg-blur), so the glass-panel line count stays what it was. */
   .mesh-groups{margin-top:.4rem;padding:8px 14px}
+  /* Export menu: the trigger is .dl; the panel shares the glass recipe above (15px, 12px under 600px via --mg-blur)
+     with a darker tint so the table text under it does not show through. */
+  .dl-wrap{position:relative;display:inline-block}
+  .dl-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;min-width:150px;padding:6px;border-radius:14px;
+    display:flex;flex-direction:column;gap:2px;
+    background:linear-gradient(160deg, rgba(34,40,62,.88), rgba(22,27,44,.86));box-shadow:0 14px 36px -12px rgba(0,0,0,.8)}
+  .dl-menu[hidden]{display:none}
+  .dl-menu [role="menuitem"]{display:block;width:100%;text-align:left;font:inherit;font-size:.82rem;font-weight:600;color:#e8eef7;
+    background:none;border:0;border-radius:8px;padding:8px 12px;cursor:pointer;white-space:nowrap}
+  .dl-menu [role="menuitem"]:hover{background:rgba(255,255,255,.14)}
+  .dl-menu [role="menuitem"]:focus-visible{outline:2px solid #fff;outline-offset:-2px;background:rgba(255,255,255,.14)}
   .mesh-groups summary{cursor:pointer;font-weight:800;color:#e8eef7;font-size:.975rem;line-height:1.5;padding:4px 0}
   .mesh-groups .mg-list{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.5rem}
   .mesh-groups .mg-btn{font:inherit;font-size:.9rem;font-weight:700;color:#e8eef7;cursor:pointer;
@@ -396,7 +407,8 @@
     table.vel .cpy{display:none}   /* Rising: Velocity replaces Cites/yr on phones, same column count as before */
     .disclaimer{margin:0 1rem 1.5rem;padding:12px 14px;border-radius:14px;
       backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);font-size:.68rem}
-    .mesh-groups{--mg-blur:12px}
+    .mesh-groups,.dl-menu{--mg-blur:12px}
+    .dl-menu [role="menuitem"]{min-height:44px}
     .mesh-groups summary,.mesh-groups .mg-btn{min-height:44px;min-width:44px}
     .mesh-groups summary{display:flex;align-items:center}
   }
@@ -1136,16 +1148,23 @@ function metaRow(text,key,filename,extra){
   const bibTitle=(key==="read"||key==="rise")
     ? "BibTeX citations for these papers"
     : "BibTeX citation for this analysis (@misc)";
-  const bibBtn='<button class="dl" title="'+bibTitle+'" onclick="downloadBibTeX(\''+key+
-    '\',\''+bibName+'\')">⬇ BibTeX</button>';
+  // One trigger, one menu per row; the id comes from the row key, which is unique per result.
+  const mid="dlm-"+key;
+  const item=(call,name,label,title)=>'<button type="button" role="menuitem"'+(title?' title="'+title+'"':'')+
+    ' onclick="'+call+'(\''+key+'\',\''+name+'\');closeExportMenus(true)">'+label+'</button>';
+  const exportMenu='<div class="dl-wrap">'+
+    '<button type="button" class="dl" aria-haspopup="menu" aria-expanded="false" aria-controls="'+mid+'" onclick="toggleExportMenu(this)">⬇ Export ▾</button>'+
+    '<div class="dl-menu" role="menu" id="'+mid+'" hidden>'+
+    item("downloadXLSX",xlsxName,"Excel")+
+    item("downloadCSV",csvName,"CSV")+
+    item("downloadJSON",filename,"JSON")+
+    item("downloadBibTeX",bibName,"BibTeX",bibTitle)+
+    '</div></div>';
   return '<div class="meta-row"><span class="meta">'+text+'<span class="qcount"></span></span>'+
     '<span class="dl-group">'+
     '<input class="qfilter" type="text" placeholder="🔍 Filter results…">'+
     (extra||'')+
-    bibBtn+
-    '<button class="dl" onclick="downloadXLSX(\''+key+'\',\''+xlsxName+'\')">⬇ Excel</button>'+
-    '<button class="dl" onclick="downloadCSV(\''+key+'\',\''+csvName+'\')">⬇ CSV</button>'+
-    '<button class="dl" onclick="downloadJSON(\''+key+'\',\''+filename+'\')">⬇ JSON</button>'+
+    exportMenu+
     '</span></div>';
 }
 
@@ -2475,6 +2494,43 @@ document.addEventListener("input",e=>{
   });
   updateQcount(res);
 });
+
+// ── Export menu (WAI-ARIA APG "Menu Button") ────────────────────────────────
+// Every close path ends in closeExportMenus(), so aria-expanded, hidden and focus cannot drift apart.
+// The Escape listener below is registered at load, before openModal adds onModalKey, so it runs first and
+// stopImmediatePropagation keeps one Escape from closing the menu AND the modal around it.
+function closeExportMenus(refocus){
+  document.querySelectorAll(".dl-menu:not([hidden])").forEach(m=>{
+    m.hidden=true;
+    const t=document.querySelector('[aria-controls="'+m.id+'"]');
+    t.setAttribute("aria-expanded","false");
+    if(refocus)t.focus();
+  });
+}
+function toggleExportMenu(btn){
+  const menu=document.getElementById(btn.getAttribute("aria-controls"));
+  const wasOpen=!menu.hidden;
+  closeExportMenus(false);   // at most one menu open
+  if(wasOpen){btn.focus();return;}
+  menu.hidden=false;
+  btn.setAttribute("aria-expanded","true");
+  menu.querySelector('[role="menuitem"]').focus();
+}
+document.addEventListener("keydown",e=>{
+  const menu=e.target.closest?e.target.closest(".dl-menu"):null;
+  if(e.key==="Escape"&&document.querySelector(".dl-menu:not([hidden])")){e.preventDefault();e.stopImmediatePropagation();closeExportMenus(true);return;}
+  if(!menu)return;
+  const items=Array.from(menu.querySelectorAll('[role="menuitem"]')), i=items.indexOf(document.activeElement);
+  if(e.key==="ArrowDown"){e.preventDefault();items[(i+1)%items.length].focus();}
+  else if(e.key==="ArrowUp"){e.preventDefault();items[(i-1+items.length)%items.length].focus();}
+  else if(e.key==="Home"){e.preventDefault();items[0].focus();}
+  else if(e.key==="End"){e.preventDefault();items[items.length-1].focus();}
+  else if(e.key==="Tab")closeExportMenus(true);   // focus goes to the trigger, then Tab moves on from there
+});
+// Click outside the menu button group closes the menu without stealing focus from what was clicked.
+// Untrusted clicks are ignored: the download helpers click a detached <a>, which must not close the menu before
+// the item handler returns focus to the trigger.
+document.addEventListener("click",e=>{if(e.isTrusted&&!e.target.closest(".dl-wrap"))closeExportMenus(false);});
 
 // Delegated sorting: clicking the header of any result table sorts it.
 document.addEventListener("click",e=>{
