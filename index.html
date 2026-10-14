@@ -790,7 +790,7 @@ function restoreNum(id,saved,legacy){
 }
 
 // Raw JSON data of the last queries, per module — for the JSON button.
-// /check runs the retraction-checker CLI, which queries Crossref (main.go, cli-src-retraction).
+// /check runs the retraction-checker CLI, which queries Crossref (main.go; built in Docker from the pinned upstream commit, see Dockerfile).
 const RETRACTION_SOURCE="Crossref via retraction-checker";
 const lastData={aff:null,auth:null,drift:null,read:null,rise:null,mesh:null};
 
@@ -847,7 +847,10 @@ function sheetValue(v){
 }
 
 // Converts any array of rows to CSV (RFC4180). Excel-friendly: BOM + CRLF.
-function toCSV(rows,header){
+// {plain:true} drops the BOM, the "sep=," hint and the provenance line, so the
+// header is line 1 for pandas, R and other tools; cells and CRLF stay the same.
+function toCSV(rows,header,opts){
+  const plain=!!(opts&&opts.plain);
   const cols=[];
   rows.forEach(r=>Object.keys(r||{}).forEach(k=>{if(!cols.includes(k))cols.push(k);}));
   const cell=v=>{
@@ -859,11 +862,11 @@ function toCSV(rows,header){
     if(/[",\r\n]/.test(s)) s='"'+s.replace(/"/g,'""')+'"';
     return s;
   };
-  const lines=["sep=,"];
-  if(header)lines.push(cell(header));
+  const lines=plain?[]:["sep=,"];
+  if(header&&!plain)lines.push(cell(header));
   lines.push(cols.map(cell).join(","));
   rows.forEach(r=>lines.push(cols.map(c=>cell(r?r[c]:"")).join(",")));
-  return "\uFEFF"+lines.join("\r\n");
+  return (plain?"":"\uFEFF")+lines.join("\r\n");
 }
 
 function rowsFromLastData(key){
@@ -966,11 +969,28 @@ registerView("rise",()=>{
 // drift + mesh render charts, not tables — the qfilter cannot narrow them,
 // so their exports fall back to the full module data (which IS what's shown).
 
+// Legacy Excel CSV (BOM, "sep=,", provenance line). No menu item calls it; kept
+// because tools/*_test.js (export, concern, retraction, rising, csv_injection) parse this format.
 function downloadCSV(key,filename){
   if(!lastData[key]){alert("Run an analysis first.");return;}
   const rows=exportRows(key).rows;
   if(!rows.length){alert("Run an analysis first — or clear the filters, nothing is visible.");return;}
   const blob=new Blob([toCSV(rows,exportHeader(key,rows))],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Plain CSV for pandas, R and other tools: same rows and cells as downloadCSV,
+// header on line 1 (no BOM, no "sep=," hint, no provenance line).
+function downloadCSVData(key,filename){
+  if(!lastData[key]){alert("Run an analysis first.");return;}
+  const rows=exportRows(key).rows;
+  if(!rows.length){alert("Run an analysis first — or clear the filters, nothing is visible.");return;}
+  const blob=new Blob([toCSV(rows,null,{plain:true})],{type:"text/csv;charset=utf-8"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
   a.href=url;a.download=filename;
@@ -1178,7 +1198,7 @@ function metaRow(text,key,filename,extra){
     '<button type="button" class="dl" aria-haspopup="menu" aria-expanded="false" aria-controls="'+mid+'" onclick="toggleExportMenu(this)">⬇ Export ▾</button>'+
     '<div class="dl-menu" role="menu" id="'+mid+'" hidden>'+
     item("downloadXLSX",xlsxName,"Excel")+
-    item("downloadCSV",csvName,"CSV")+
+    item("downloadCSVData",csvName,"CSV","Plain CSV (RFC 4180) for pandas, R, Zotero. For Excel, use Excel (.xlsx).")+
     item("downloadJSON",filename,"JSON")+
     item("downloadBibTeX",bibName,"BibTeX",bibTitle)+
     '</div></div>';

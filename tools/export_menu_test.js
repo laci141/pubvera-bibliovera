@@ -43,13 +43,15 @@ check("E1 the row has exactly one aria-haspopup=\"menu\" trigger and one role=\"
 const items = [...menuHtml.matchAll(/<button type="button" role="menuitem"([^>]*)>([^<]*)<\/button>/g)];
 const want = [
   ["Excel", "downloadXLSX('aff','bibliovera-aff.xlsx')"],
-  ["CSV", "downloadCSV('aff','bibliovera-aff.csv')"],
+  ["CSV", "downloadCSVData('aff','bibliovera-aff.csv')", "Plain CSV (RFC 4180) for pandas, R, Zotero. For Excel, use Excel (.xlsx)."],
   ["JSON", "downloadJSON('aff','bibliovera-aff.json')"],
   ["BibTeX", "downloadBibTeX('aff','bibliovera-aff.bib')"],
 ];
-const okItems = items.length === 4 && want.every(([label, call], i) =>
-  items[i] && items[i][2] === label && items[i][1].includes('onclick="' + call));
-check("E2 the menu has four role=\"menuitem\" buttons (Excel, CSV, JSON, BibTeX) calling downloadXLSX/CSV/JSON/BibTeX with the old arguments (" + items.length + " items)", okItems);
+const okItems = items.length === 4 && want.every(([label, call, title], i) =>
+  items[i] && items[i][2] === label && items[i][1].includes('onclick="' + call) &&
+  (title === undefined || items[i][1].includes(' title="' + title + '"')));
+check("E2 the menu has four role=\"menuitem\" buttons (Excel, CSV, JSON, BibTeX) in this order; CSV calls downloadCSVData with <base>.csv and the plain-CSV title (" + items.length + " items: " + items.map(m => m[2]).join(" | ") + ")", okItems);
+check("E2b no menu item calls the legacy downloadCSV (sep= line, provenance line, BOM)", !/onclick="downloadCSV\(/.test(menuHtml));
 
 const toggle = fn("toggleExportMenu"), closeAll = fn("closeExportMenus");
 check("E3 trigger has aria-expanded=\"false\" and the open/close JS sets \"true\" and \"false\"",
