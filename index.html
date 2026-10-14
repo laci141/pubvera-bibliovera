@@ -830,6 +830,22 @@ function neutralizeCell(v){
   return (typeof v==="string"&&/^[=+\-@\t\r]/.test(v))?"'"+v:v;
 }
 
+// Invisible characters OpenAlex leaves in names (soft hyphen, zero-width
+// space/non-joiner/joiner, BOM) are removed, then the name is trimmed.
+const INVISIBLE_RE=/[\u00AD\u200B\u200C\u200D\uFEFF]/g;
+function cleanName(s){
+  return String(s).replace(INVISIBLE_RE,"").trim();
+}
+
+// Spreadsheet value of an object/array cell (CSV and XLSX): an array of
+// strings (e.g. authors) becomes one readable "A; B; C" cell in the original
+// order, guarded against formula injection; anything else stays JSON.
+function sheetValue(v){
+  if(Array.isArray(v)&&v.every(x=>typeof x==="string"))
+    return neutralizeCell(v.map(cleanName).filter(Boolean).join("; "));
+  return JSON.stringify(v);
+}
+
 // Converts any array of rows to CSV (RFC4180). Excel-friendly: BOM + CRLF.
 function toCSV(rows,header){
   const cols=[];
@@ -839,7 +855,7 @@ function toCSV(rows,header){
     // false is a measured answer and must read "No"; empty means "no data".
     if(v===false)return "No";
     if(v===true)return "Yes";
-    let s=(typeof v==="object")?JSON.stringify(v):String(neutralizeCell(v));
+    let s=(typeof v==="object")?sheetValue(v):String(neutralizeCell(v));
     if(/[",\r\n]/.test(s)) s='"'+s.replace(/"/g,'""')+'"';
     return s;
   };
@@ -976,7 +992,7 @@ function downloadXLSX(key,filename){
     if(v===null||v===undefined)return "";
     if(v===false)return "No";
     if(v===true)return "Yes";
-    return (typeof v==="object")?JSON.stringify(v):neutralizeCell(v);
+    return (typeof v==="object")?sheetValue(v):neutralizeCell(v);
   })));
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   // Column analysis: long text (title, topic) left-aligned + wide; short/numeric centred.
@@ -1029,6 +1045,7 @@ function bibKey(r,i){
 function bibEsc(v){ 
   return String(v==null?"":v)
     .normalize("NFC")
+    .replace(INVISIBLE_RE,"")
     .replace(/[{}\\]/g,"")
     .replace(/([&%#_$])/g,"\\$1")
     .replace(/\^/g,"\\textasciicircum{}")
@@ -1050,7 +1067,7 @@ function toBibTeX(rows){
     const year=Number(r.year||r.publication_year||0);
     const journal=bibEsc(r.journal||r.source||r.venue||"");
     const authors=Array.isArray(r.authors)
-      ? r.authors.map(a=>bibEsc(typeof a==="string"?a:(a&&(a.name||a.author_name)||""))).filter(Boolean).join(" and ")
+      ? r.authors.map(a=>bibEsc(typeof a==="string"?cleanName(a):(a&&(a.name||a.author_name)||""))).filter(Boolean).join(" and ")
       : bibEsc(r.authors||r.author||"");
     const lines=["@article{"+bibKey(r,i)+","];
     lines.push("  title   = {"+title+"},");
