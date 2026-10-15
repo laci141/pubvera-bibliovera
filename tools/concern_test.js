@@ -175,9 +175,9 @@ function exportAs(fmt, key) {
   if (fmt === "csv") { run('downloadCSV("' + key + '","x.csv")'); return parseCSV(lastBlob()); }
   run('downloadXLSX("' + key + '","x.xlsx")');
   const ws = xlsxSheet, hdr = [];
-  for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 1, c })].v);
+  for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);
   const rows = [];
-  for (let r = 2; r < ws._rows; r++) {
+  for (let r = 1; r < ws._rows; r++) {
     const o = {};
     hdr.forEach((k, c) => { const cell = ws[XLSX.utils.encode_cell({ r, c })]; o[k] = cell ? cell.v : ""; });
     rows.push(o);
@@ -285,7 +285,7 @@ const idsIn = h => [...h.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
     check(lab("f: CSV columns end " + wantTail + " (" + tail.join(",") + ")"),
       tail.join(",") === wantTail);
     run('downloadXLSX("' + mod + '","x.xlsx")');
-    const xh = []; for (let c = 0; c < xlsxSheet._cols; c++) xh.push(xlsxSheet[XLSX.utils.encode_cell({ r: 1, c })].v);
+    const xh = []; for (let c = 0; c < xlsxSheet._cols; c++) xh.push(xlsxSheet[XLSX.utils.encode_cell({ r: 0, c })].v);
     check(lab("f: XLSX header order identical to CSV"), xh.slice(xh.indexOf("retraction_status")).join(",") === tail.join(","));
   }
 
@@ -301,8 +301,8 @@ const idsIn = h => [...h.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
   check("g: CSV concern_date '=2020' neutralized", /'=2020/.test(csvText) && !/[,\n]=2020/.test(csvText));
   check("g: CSV concern_notice_doi '=10.9/x' neutralized", /'=10\.9\/x/.test(csvText) && !/[,\n]=10\.9\/x/.test(csvText));
   run('downloadXLSX("read","x.xlsx")');
-  const xr = []; for (let c = 0; c < xlsxSheet._cols; c++) xr.push(xlsxSheet[XLSX.utils.encode_cell({ r: 1, c })].v);
-  const xv = k => xlsxSheet[XLSX.utils.encode_cell({ r: 2, c: xr.indexOf(k) })];
+  const xr = []; for (let c = 0; c < xlsxSheet._cols; c++) xr.push(xlsxSheet[XLSX.utils.encode_cell({ r: 0, c })].v);
+  const xv = k => xlsxSheet[XLSX.utils.encode_cell({ r: 1, c: xr.indexOf(k) })];
   check("g: XLSX concern_date / concern_notice_doi neutralized",
     !!xv("concern_date") && xv("concern_date").v === "'=2020" && !!xv("concern_notice_doi") && xv("concern_notice_doi").v === "'=10.9/x");
 

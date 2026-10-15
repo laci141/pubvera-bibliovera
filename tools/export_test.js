@@ -159,12 +159,12 @@ function parseCSV(text) {
   // 2. XLSX
   run('downloadXLSX("aff","a.xlsx")');
   const ws = xlsxSheet;
-  const hdr = []; for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 1, c })].v);
+  const hdr = []; for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);
   const lbCol = hdr.indexOf("low_base");
-  let uclRow = -1; for (let r = 2; r < ws._rows; r++) if (ws["A" + (r + 1)].v === "University College London") uclRow = r;
+  let uclRow = -1; for (let r = 1; r < ws._rows; r++) if (ws["A" + (r + 1)].v === "University College London") uclRow = r;
   const lbCell = lbCol >= 0 && uclRow >= 0 ? ws[XLSX.utils.encode_cell({ r: uclRow, c: lbCol })].v : undefined;
   check('XLSX: UCL low_base cell is "No" (got ' + JSON.stringify(lbCell) + ")", lbCell === "No");
-  const wantRef = "A2:F" + (affRows.length + 2);
+  const wantRef = "A1:F" + (affRows.length + 1);
   const gotRef = ws["!autofilter"] && ws["!autofilter"].ref;
   check("XLSX: autofilter ref " + wantRef + " (got " + JSON.stringify(gotRef) + ")", gotRef === wantRef);
 
