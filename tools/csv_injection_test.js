@@ -176,9 +176,9 @@ function parseCSV(text) {
   run('downloadXLSX("read","r.xlsx")');
   const ws = xlsxSheet;
   const addrs = Object.keys(ws).filter(k => /^[A-Z]+\d+$/.test(k));
-  const hdr = []; for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 1, c })].v);
-  const tCell = ws[XLSX.utils.encode_cell({ r: 2, c: hdr.indexOf("title") })] || {};
-  const pCell = ws[XLSX.utils.encode_cell({ r: 2, c: hdr.indexOf("topic") })] || {};
+  const hdr = []; for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);
+  const tCell = ws[XLSX.utils.encode_cell({ r: 1, c: hdr.indexOf("title") })] || {};
+  const pCell = ws[XLSX.utils.encode_cell({ r: 1, c: hdr.indexOf("topic") })] || {};
   check('XLSX: title cell type "s" (got ' + JSON.stringify(tCell.t) + ")", tCell.t === "s");
   check("XLSX: title value starts with ' (got " + JSON.stringify(tCell.v) + ")", typeof tCell.v === "string" && tCell.v === "'" + EVIL_TITLE);
   check('XLSX: topic value "\'+cmd" (got ' + JSON.stringify(pCell.v) + ")", pCell.v === "'+cmd");
@@ -201,8 +201,8 @@ function parseCSV(text) {
   check('CSV: growth -10 is still "-10" (got ' + JSON.stringify(shr[acols.indexOf("growth")]) + ")", shr[acols.indexOf("growth")] === "-10");
   run('downloadXLSX("aff","a.xlsx")');
   const aws = xlsxSheet;
-  const ahdr = []; for (let c = 0; c < aws._cols; c++) ahdr.push(aws[XLSX.utils.encode_cell({ r: 1, c })].v);
-  const gp = aws[XLSX.utils.encode_cell({ r: 2, c: ahdr.indexOf("growth_pct") })] || {};
+  const ahdr = []; for (let c = 0; c < aws._cols; c++) ahdr.push(aws[XLSX.utils.encode_cell({ r: 0, c })].v);
+  const gp = aws[XLSX.utils.encode_cell({ r: 1, c: ahdr.indexOf("growth_pct") })] || {};
   check("XLSX: growth_pct -33 is still the number -33 (got " + JSON.stringify(gp.v) + " t=" + gp.t + ")", gp.v === -33 && gp.t === "n");
 
   if (failed) {

@@ -174,9 +174,9 @@ function exportAs(fmt, key) {
   if (fmt === "csv") { run('downloadCSV("' + key + '","x.csv")'); return parseCSV(lastBlob()); }
   run('downloadXLSX("' + key + '","x.xlsx")');
   const ws = xlsxSheet, hdr = [];
-  for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 1, c })].v);
+  for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);
   const rows = [];
-  for (let r = 2; r < ws._rows; r++) {
+  for (let r = 1; r < ws._rows; r++) {
     const o = {};
     hdr.forEach((k, c) => { const cell = ws[XLSX.utils.encode_cell({ r, c })]; o[k] = cell ? cell.v : ""; });
     rows.push(o);
