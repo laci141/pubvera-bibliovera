@@ -65,9 +65,9 @@ const authors = ["Zoe Young", "­Jun Li­", "Anna Brown"];
 const want = "Zoe Young; Jun Li; Anna Brown";
 
 // a. CSV
-const csv = String(call("toCSV", [{ title: "T", authors }])).replace(/^﻿/, "").split("\r\n");
-const csvCols = (csv[1] || "").split(",");
-const csvCell = (csv[2] || "").split(",").slice(csvCols.indexOf("authors")).join(",");
+const csv = String(call("toCSV", [{ title: "T", authors }])).split("\r\n");
+const csvCols = (csv[0] || "").split(",");
+const csvCell = (csv[1] || "").split(",").slice(csvCols.indexOf("authors")).join(",");
 check("a. CSV authors cell is exactly " + JSON.stringify(want) + " (got " + JSON.stringify(csvCell) + ")", csvCell === want);
 check("a. CSV authors cell holds no U+00AD, brackets or quotes", !/[­\[\]"]/.test(csvCell));
 
@@ -98,7 +98,7 @@ check("e. BibTeX rows with authors [] / no authors have no author line", /title/
 // f. formula-injection guard on the joined cell
 const svEq = call("sheetValue", ["=HYPERLINK(1)", "Anna Brown"]);
 check("f. sheetValue first name \"=...\" starts with \"'=\" (got " + JSON.stringify(svEq) + ")", typeof svEq === "string" && svEq.startsWith("'="));
-const csvEq = String(call("toCSV", [{ authors: ["=HYPERLINK(1)", "Anna Brown"] }])).replace(/^﻿/, "").split("\r\n")[2] || "";
+const csvEq = String(call("toCSV", [{ authors: ["=HYPERLINK(1)", "Anna Brown"] }])).split("\r\n")[1] || "";
 check("f. CSV first name \"=...\" cell starts with \"'=\" (got " + JSON.stringify(csvEq) + ")", csvEq.startsWith("'="));
 
 console.log(failed ? "\n" + failed + " check(s) FAILED" : "\nall checks passed");

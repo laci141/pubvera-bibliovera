@@ -165,13 +165,13 @@ const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
 const lastBlob = () => blobs[blobs.length - 1];
 
 function parseCSV(text) {
-  const lines = text.replace(/^﻿/, "").split("\r\n");
-  const cols = lines[2].split(",");
-  return lines.slice(3).map(l => { const c = l.split(","); const o = {}; cols.forEach((k, i) => (o[k] = c[i])); return o; });
+  const lines = text.split("\r\n");
+  const cols = lines[0].split(",");
+  return lines.slice(1).map(l => { const c = l.split(","); const o = {}; cols.forEach((k, i) => (o[k] = c[i])); return o; });
 }
 function exportAs(fmt, key) {
   if (fmt === "json") { run('downloadJSON("' + key + '","x.json")'); return JSON.parse(lastBlob()).rows; }
-  if (fmt === "csv") { run('downloadCSV("' + key + '","x.csv")'); return parseCSV(lastBlob()); }
+  if (fmt === "csv") { run('downloadCSVData("' + key + '","x.csv")'); return parseCSV(lastBlob()); }
   run('downloadXLSX("' + key + '","x.xlsx")');
   const ws = xlsxSheet, hdr = [];
   for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);

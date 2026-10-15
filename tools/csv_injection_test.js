@@ -121,7 +121,6 @@ const lastBlob = () => blobs[blobs.length - 1];
 // Minimal RFC4180 reader: quoted fields, doubled quotes, CRLF records.
 function parseCSV(text) {
   const recs = []; let rec = [], f = "", q = false;
-  text = text.replace(/^﻿/, "");
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (q) {
@@ -160,17 +159,17 @@ function parseCSV(text) {
   byId("read_year").value = "0";
   byId("read_cites").value = "0";
   await run("runRead()");
-  run('downloadCSV("read","r.csv")');
+  run('downloadCSVData("read","r.csv")');
   const recs = parseCSV(lastBlob());
-  const cols = recs[2];
-  const evil = recs.slice(3).find(r => r.length === cols.length && r[cols.indexOf("doi")] === "10.1/a") || [];
+  const cols = recs[0];
+  const evil = recs.slice(1).find(r => r.length === cols.length && r[cols.indexOf("doi")] === "10.1/a") || [];
   const titleCell = evil[cols.indexOf("title")];
   const topicCell = evil[cols.indexOf("topic")];
   check("CSV: the row stays one record with " + cols.length + " fields (got " + evil.length + ")", evil.length === cols.length);
   check("CSV: title cell starts with ' and keeps its text (got " + JSON.stringify(titleCell) + ")", titleCell === "'" + EVIL_TITLE);
   check('CSV: topic cell "+cmd" is "\'+cmd" (got ' + JSON.stringify(topicCell) + ")", topicCell === "'+cmd");
   check("CSV: raw file has the quoted+doubled form after the prefix", lastBlob().includes('"\'=HYPERLINK(""http://x"",""y"")"'));
-  check("CSV: no field starts with = + - @ TAB or CR", recs.slice(3).every(r => r.every(c => !/^[=+\-@\t\r]/.test(c))));
+  check("CSV: no field starts with = + - @ TAB or CR", recs.slice(1).every(r => r.every(c => !/^[=+\-@\t\r]/.test(c))));
 
   // ── 3. XLSX: same row ──
   run('downloadXLSX("read","r.xlsx")');
@@ -193,10 +192,10 @@ function parseCSV(text) {
   byId("aff_minp").value = "13";
   byId("aff_lim").value = "59";
   await run("runAff()");
-  run('downloadCSV("aff","a.csv")');
+  run('downloadCSVData("aff","a.csv")');
   const arecs = parseCSV(lastBlob());
-  const acols = arecs[2];
-  const shr = arecs[3] || [];
+  const acols = arecs[0];
+  const shr = arecs[1] || [];
   check('CSV: growth_pct -33 is still "-33" (got ' + JSON.stringify(shr[acols.indexOf("growth_pct")]) + ")", shr[acols.indexOf("growth_pct")] === "-33");
   check('CSV: growth -10 is still "-10" (got ' + JSON.stringify(shr[acols.indexOf("growth")]) + ")", shr[acols.indexOf("growth")] === "-10");
   run('downloadXLSX("aff","a.xlsx")');

@@ -241,8 +241,8 @@ function setForm() {
   // (retraction + concern columns included), so existing column positions never move. ──
   const ORDER = "title,doi,year,pub_date,journal,authors,cited_by_count,citations_per_year,retraction_status,retraction_checked_at,expression_of_concern,concern_date,concern_notice_doi,velocity,citations_last_year,fwci,citation_normalized_percentile";
   const exportKeys = () => {
-    run('downloadCSV("rise","x.csv")');
-    const csvHeader = blobs[blobs.length - 1].split(/\r?\n/)[2];
+    run('downloadCSVData("rise","x.csv")');
+    const csvHeader = blobs[blobs.length - 1].split(/\r?\n/)[0];
     run('downloadJSON("rise","x.json")');
     const jsonRows = JSON.parse(blobs[blobs.length - 1]).rows;
     return { csvHeader, jsonKeys: Object.keys(jsonRows[0]).join(","), jsonRows };
@@ -297,7 +297,7 @@ function setForm() {
   check("L: explanation line appears once", resHTML().split(HINT).length === 2);
   check("L: the line sits below the table", resHTML().indexOf(HINT) > resHTML().indexOf("</table>"));
   check("L: export keeps null velocity (not 0, not a string)", risen().every(r => r.doi === "10.1/lok" ? r.velocity === 1.5 : r.velocity === null));
-  run('downloadCSV("rise","x.csv")');
+  run('downloadCSVData("rise","x.csv")');
   check("L: CSV export carries no hint text", !blobs[blobs.length - 1].includes("Too new") && !blobs[blobs.length - 1].includes("No current yearly"));
 
   curateHandler = () => ({ sort: "velocity", rows: [nrow("10.1/m16", 2016, null), nrow("10.1/m20", 2020, 2), nrow("10.1/m24", 2024, null)] });

@@ -166,13 +166,13 @@ const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
 const lastBlob = () => blobs[blobs.length - 1];
 
 function parseCSV(text) {
-  const lines = text.replace(/^﻿/, "").split("\r\n");
-  const cols = lines[2].split(",");
-  return lines.slice(3).map(l => { const c = l.split(","); const o = {}; cols.forEach((k, i) => (o[k] = c[i])); return o; });
+  const lines = text.split("\r\n");
+  const cols = lines[0].split(",");
+  return lines.slice(1).map(l => { const c = l.split(","); const o = {}; cols.forEach((k, i) => (o[k] = c[i])); return o; });
 }
 function exportAs(fmt, key) {
   if (fmt === "json") { run('downloadJSON("' + key + '","x.json")'); return JSON.parse(lastBlob()).rows; }
-  if (fmt === "csv") { run('downloadCSV("' + key + '","x.csv")'); return parseCSV(lastBlob()); }
+  if (fmt === "csv") { run('downloadCSVData("' + key + '","x.csv")'); return parseCSV(lastBlob()); }
   run('downloadXLSX("' + key + '","x.xlsx")');
   const ws = xlsxSheet, hdr = [];
   for (let c = 0; c < ws._cols; c++) hdr.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);
@@ -276,8 +276,8 @@ const idsIn = h => [...h.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
       check(lab("f: " + fmt + " unchecked rows (error, no DOI) keep the columns empty"),
         ["err", "nodoi"].every(n => R(n).expression_of_concern === "" && !R(n).concern_date && !R(n).concern_notice_doi));
     }
-    run('downloadCSV("' + mod + '","x.csv")');
-    const hdr = lastBlob().replace(/^﻿/, "").split("\r\n")[2].split(",");
+    run('downloadCSVData("' + mod + '","x.csv")');
+    const hdr = lastBlob().split("\r\n")[0].split(",");
     const tail = hdr.slice(hdr.indexOf("retraction_status"));
     // Rising appends its 4 velocity columns after the concern columns; Read ends with them.
     const wantTail = "retraction_status,retraction_checked_at,expression_of_concern,concern_date,concern_notice_doi" +
@@ -295,7 +295,7 @@ const idsIn = h => [...h.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
   await run("runRead()"); await tick();
   answer("10.1/inj", { retracted: false, expression_of_concern: true, concern_date: "=2020", concern_notice_doi: "=10.9/x", concern_notice_url: "https://doi.org/x" });
   await tick();
-  run('downloadCSV("read","x.csv")');
+  run('downloadCSVData("read","x.csv")');
   const csvText = lastBlob();
   check("g: CSV title '=SUM(1)' neutralized", /'=SUM\(1\)/.test(csvText) && !/[,\n]=SUM/.test(csvText));
   check("g: CSV concern_date '=2020' neutralized", /'=2020/.test(csvText) && !/[,\n]=2020/.test(csvText));
