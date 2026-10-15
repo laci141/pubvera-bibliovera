@@ -1,6 +1,6 @@
 // CSV test: the single "CSV" menu item exports a plain RFC 4180 file for pandas,
 // R and Zotero - header on line 1, no "sep=," hint, no provenance line, no BOM -
-// with the same columns, rows and cell rules as the legacy downloadCSV body.
+// with every export column, one record per row and the shared cell rules.
 //
 // Run: node tools/csv_data_test.js
 //
@@ -119,9 +119,6 @@ function parseCSV(text) {
   await run("runRead()");
   const page = byId("read_res").innerHTML;
 
-  run('downloadCSV("read","r.csv")');
-  const excel = lastBlob().text;
-
   // The menu item of the rendered row is the call under test: its onclick decides the filename.
   const call = (page.match(/onclick="(downloadCSVData\([^)]*\))/) || [])[1] || "";
   let data = "", dataType = "", dataName = "";
@@ -148,15 +145,15 @@ function parseCSV(text) {
     (data ? "U+" + data.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0") : "none") + ")",
     data !== "" && data.charCodeAt(0) !== 0xFEFF);
 
-  // c. same header, same rows as the Excel CSV body
-  const excelBody = excel.replace(/^\uFEFF/, "").split("\r\n").slice(2).join("\r\n");
-  const excelRecs = parseCSV(excelBody), dataRecs = data ? parseCSV(data) : [];
-  check("c. same header as the Excel CSV (" + JSON.stringify((dataRecs[0] || []).join(",")) + ")",
-    dataRecs.length > 0 && JSON.stringify(dataRecs[0]) === JSON.stringify(excelRecs[0]));
-  check("c. same number of data rows as the Excel CSV (" + (dataRecs.length - 1) + " vs " + (excelRecs.length - 1) + ", want " + curateRows.length + ")",
-    dataRecs.length === excelRecs.length && dataRecs.length - 1 === curateRows.length);
-  check("c. data CSV is byte-identical to the Excel CSV after dropping its BOM and first two lines, CRLF line ends",
-    data !== "" && data === excelBody && /\r\n/.test(data) && !/[^\r]\n/.test(data));
+  // c. header = every export column in first-seen order, one record per row, CRLF line ends
+  const dataRecs = data ? parseCSV(data) : [];
+  const wantCols = [];
+  JSON.parse(run('JSON.stringify(exportRows("read").rows)')).forEach(r => Object.keys(r || {}).forEach(k => { if (!wantCols.includes(k)) wantCols.push(k); }));
+  check("c. header is the export columns (" + JSON.stringify((dataRecs[0] || []).join(",")) + ")",
+    dataRecs.length > 0 && JSON.stringify(dataRecs[0]) === JSON.stringify(wantCols));
+  check("c. one data row per paper (" + (dataRecs.length - 1) + ", want " + curateRows.length + ")",
+    dataRecs.length - 1 === curateRows.length);
+  check("c. CRLF line ends only", data !== "" && /\r\n/.test(data) && !/[^\r]\n/.test(data));
 
   // d. cell rules
   const cols = dataRecs[0] || [];
@@ -167,10 +164,6 @@ function parseCSV(text) {
   check("d. \"=1+1\" title is neutralized with a leading quote (got " + JSON.stringify(titleCell) + ")", titleCell === "'=1+1");
   check("d. comma/quote title is RFC 4180 quoted (raw line " + JSON.stringify(dataLines[2]) + ")",
     r1[cols.indexOf("title")] === 'Gene therapy, "B"' && (dataLines[2] || "").startsWith('"Gene therapy, ""B"""'));
-
-  // e. Excel CSV unchanged
-  check("e. Excel CSV still starts with \"\\ufeffsep=,\" followed by the provenance line",
-    excel.startsWith("\uFEFFsep=,\r\n") && /Bibliovera/.test(excel.split("\r\n")[1] || ""));
 
   // f. filename and MIME
   check("f. downloaded filename is <base>.csv, not -data.csv (got " + JSON.stringify(dataName) + ")",

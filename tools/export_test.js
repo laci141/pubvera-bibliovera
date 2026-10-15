@@ -121,10 +121,10 @@ const run = code => vm.runInContext(code, sandbox);
 function lastBlob() { return blobs[blobs.length - 1]; }
 function parseCSV(text) {
   // Fixture values hold no quotes or commas, so a plain split is exact.
-  const lines = text.replace(/^﻿/, "").split("\r\n");
-  const cols = lines[2].split(",");
-  const rows = lines.slice(3).map(l => { const c = l.split(","); const o = {}; cols.forEach((k, i) => (o[k] = c[i])); return o; });
-  return { header: lines[1], cols, rows };
+  const lines = text.split("\r\n");
+  const cols = lines[0].split(",");
+  const rows = lines.slice(1).map(l => { const c = l.split(","); const o = {}; cols.forEach((k, i) => (o[k] = c[i])); return o; });
+  return { cols, rows };
 }
 
 (async () => {
@@ -137,7 +137,7 @@ function parseCSV(text) {
   await run("runAff()");
   const page = byId("aff_res").innerHTML;
 
-  run('downloadCSV("aff","a.csv")');
+  run('downloadCSVData("aff","a.csv")');
   const csv = parseCSV(lastBlob());
   const ucl = csv.rows.find(r => r.institution === "University College London") || {};
   const ams = csv.rows.find(r => r.institution === "Amsterdam University Medical Centers") || {};
@@ -154,7 +154,10 @@ function parseCSV(text) {
   check("CSV: Amsterdam UMC (prior 0) growth_pct empty (got " + JSON.stringify(ams.growth_pct) + ")", ams.growth_pct === "");
   check("CSV: low_base row with prior > 0 still gets its real percent, 150 (got " + JSON.stringify(small.growth_pct) + ")", small.growth_pct === "150");
   check("CSV: growth_pct sits right after growth (" + csv.cols.join(",") + ")", csv.cols.indexOf("growth_pct") === csv.cols.indexOf("growth") + 1);
-  check("CSV provenance carries the aff filters incl. limit", /5y window/.test(csv.header) && /limit 59/.test(csv.header));
+  // The provenance line left the CSV; exportHeader still feeds the XLSX "About" sheet and BibTeX.
+  const prov = run('exportHeader("aff",exportRows("aff").rows)');
+  check("export provenance carries the aff filters incl. limit", /5y window/.test(prov) && /limit 59/.test(prov));
+  check("CSV line 0 is the header, not provenance (" + csv.cols[0] + ")", !/5y window|Bibliovera/.test(csv.cols.join(",")));
 
   // 2. XLSX
   run('downloadXLSX("aff","a.xlsx")');

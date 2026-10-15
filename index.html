@@ -846,11 +846,9 @@ function sheetValue(v){
   return JSON.stringify(v);
 }
 
-// Converts any array of rows to CSV (RFC4180). Excel-friendly: BOM + CRLF.
-// {plain:true} drops the BOM, the "sep=," hint and the provenance line, so the
-// header is line 1 for pandas, R and other tools; cells and CRLF stay the same.
-function toCSV(rows,header,opts){
-  const plain=!!(opts&&opts.plain);
+// Converts any array of rows to CSV (RFC4180): header on line 1, CRLF line ends,
+// for pandas, R and other tools.
+function toCSV(rows){
   const cols=[];
   rows.forEach(r=>Object.keys(r||{}).forEach(k=>{if(!cols.includes(k))cols.push(k);}));
   const cell=v=>{
@@ -862,11 +860,9 @@ function toCSV(rows,header,opts){
     if(/[",\r\n]/.test(s)) s='"'+s.replace(/"/g,'""')+'"';
     return s;
   };
-  const lines=plain?[]:["sep=,"];
-  if(header&&!plain)lines.push(cell(header));
-  lines.push(cols.map(cell).join(","));
+  const lines=[cols.map(cell).join(",")];
   rows.forEach(r=>lines.push(cols.map(c=>cell(r?r[c]:"")).join(",")));
-  return (plain?"":"\uFEFF")+lines.join("\r\n");
+  return lines.join("\r\n");
 }
 
 function rowsFromLastData(key){
@@ -969,28 +965,12 @@ registerView("rise",()=>{
 // drift + mesh render charts, not tables — the qfilter cannot narrow them,
 // so their exports fall back to the full module data (which IS what's shown).
 
-// Legacy Excel CSV (BOM, "sep=,", provenance line). No menu item calls it; kept
-// because tools/*_test.js (export, concern, retraction, rising, csv_injection) parse this format.
-function downloadCSV(key,filename){
-  if(!lastData[key]){alert("Run an analysis first.");return;}
-  const rows=exportRows(key).rows;
-  if(!rows.length){alert("Run an analysis first — or clear the filters, nothing is visible.");return;}
-  const blob=new Blob([toCSV(rows,exportHeader(key,rows))],{type:"text/csv;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=filename;
-  document.body.appendChild(a);a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// Plain CSV for pandas, R and other tools: same rows and cells as downloadCSV,
-// header on line 1 (no BOM, no "sep=," hint, no provenance line).
+// Plain CSV for pandas, R and other tools: header on line 1, no BOM, no provenance line.
 function downloadCSVData(key,filename){
   if(!lastData[key]){alert("Run an analysis first.");return;}
   const rows=exportRows(key).rows;
   if(!rows.length){alert("Run an analysis first — or clear the filters, nothing is visible.");return;}
-  const blob=new Blob([toCSV(rows,null,{plain:true})],{type:"text/csv;charset=utf-8"});
+  const blob=new Blob([toCSV(rows)],{type:"text/csv;charset=utf-8"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
   a.href=url;a.download=filename;
