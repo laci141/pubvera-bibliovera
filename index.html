@@ -887,6 +887,8 @@ function registerView(key,fn){ viewProviders[key]=fn; }
 // the params actually sent (plus client-side filters), not from the form fields.
 // They lead the export "filters", ahead of the quick-filter text and sort.
 const queryFilters={};
+// The keyword each module's last successful run searched for (export "query").
+const queryText={};
 
 function exportRows(key){
   const qf=queryFilters[key]||[];
@@ -1118,12 +1120,9 @@ const EXPORT_LABEL=Object.assign({},ANALYSIS_LABEL,{
   rise:"Rising papers analysis"
 });
 
-// The module's query description from the meta row (e.g. "25 institutions · lancet"),
-// with the " · 7 / 25 rows" count display trimmed off the end.
+// The keyword the module's last successful run searched for; "" when none.
 function moduleQuery(key){
-  const el=document.querySelector("#"+key+"_res .meta");
-  if(!el)return "";
-  return el.textContent.replace(/\s*·\s*\d+\s*\/\s*\d+\s*rows\s*$/,"").trim();
+  return queryText[key]||"";
 }
 
 // Provenance row for the top of every exported file: app, analysis, query,
@@ -1408,6 +1407,7 @@ async function runAff(){
   try{
     const data=await fetchJSON("/affiliations?"+p.toString());
     lastData.aff=data;
+    queryText.aff="";
     queryFilters.aff=[j||"all journals",p.get("years")+"y window","min "+p.get("threshold")+" recent",
       "low base <"+p.get("minPrior"),"limit "+p.get("limit")];
     res.innerHTML=affTable(data,j,p);
@@ -1475,6 +1475,7 @@ async function runAuth(){
   try{
     const data=await fetchJSON("/authors?"+p.toString());
     lastData.auth=data;
+    queryText.auth=inst;
     queryFilters.auth=(inst?['institution "'+inst+'"']:[]).concat([j||"all journals",
       "min "+p.get("minWorks")+" works","limit "+p.get("limit")]);
     res.innerHTML=authTable(data,inst,p);
@@ -1530,6 +1531,7 @@ async function runDrift(){
   try{
     const data=await fetchJSON("/drift?"+p.toString());
     lastData.drift=data;
+    queryText.drift="";
     queryFilters.drift=[j||"all journals",w1.replace(":","–")+" vs "+w2.replace(":","–"),
       "top "+p.get("topN")];
     res.innerHTML=driftChart(data,j,w1,w2);
@@ -1595,6 +1597,7 @@ async function runRead(){
       rows=rows.filter(r=>(minY===null||paperYear(r)>=minY)&&(paperCitations(r)>=minC));
     }
     lastData.read=rows;
+    queryText.read=topic;
     queryFilters.read=['topic "'+topic+'"',"sort "+p.get("sort"),"limit "+p.get("limit")]
       .concat(minY!==null?["from "+minY]:[],minC>0?["min "+minC+" citations"]:[]);
     res.innerHTML=readTable(rows,topic);
@@ -1691,6 +1694,7 @@ async function runRise(){
       journal:x.r.journal||x.r.source||"",authors:x.r.authors||"",
       cited_by_count:x.cites,citations_per_year:Math.round(x.velocity*10)/10,
       velocity:x.vel,citations_last_year:x.last,fwci:x.fwci,citation_normalized_percentile:x.pct}));
+    queryText.rise=topic;
     queryFilters.rise=['topic "'+topic+'"',j||"all journals"].concat(minYear!==null?["from "+minYear]:[],
       minC>0?["min "+minC+" citations"]:[],["limit "+limit]);
     res.innerHTML=riseTable(ranked,topic,j,minYear,notes.concat([risePoolText]),velMode);
@@ -1752,6 +1756,7 @@ async function runMesh(){
     const data=await fetchJSON("/mesh?"+p.toString());
     const pairs=Array.isArray(data)?data:[];
     lastData.mesh=pairs;
+    queryText.mesh=org;
     queryFilters.mesh=['org "'+org+'"',"limit "+p.get("limit")];
     if(!pairs.length){res.innerHTML='<p class="meta">No co-authorship pairs found for "'+esc(org)+'". Try a broader institution name.</p>';return;}
     const authorCount=new Set(pairs.flatMap(p=>[p.author_a,p.author_b])).size;
