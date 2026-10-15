@@ -811,7 +811,7 @@ function downloadJSON(key,filename){
       ...((key==="rise"&&risePoolText)?{pool_and_age_method:risePoolText}:{}),
       exported_at:new Date().toISOString()
     },
-    rows:er.rows
+    rows:er.rows.map(r=>(r&&Array.isArray(r.authors))?{...r,authors:r.authors.map(a=>typeof a==="string"?cleanName(a):a)}:r)
   };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
