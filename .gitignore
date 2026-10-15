@@ -24,3 +24,5 @@ bin/server*
 PROMPT.md
 .claude/
 cli-src-retraction/
+# Linux-built CLI binary, never commit (see 5bee263).
+bin/thelancet-pp-cli-linux
