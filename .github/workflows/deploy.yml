@@ -166,6 +166,46 @@ jobs:
           fi
           echo "label matches the pinned commit"
 
+      # The "Vulnerability scan" step above covers this module only. The two
+      # CLIs are built in the Dockerfile from a pinned upstream commit, so
+      # their dependencies are scanned here as the binaries that actually ship,
+      # taken from the image loaded for the label check, BEFORE anything is
+      # pushed. No extra build: that image already has load: true.
+      - name: Extract CLI binaries from the image
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cli-bin"
+          cid=$(docker create bibliovera-label-check:ci)
+          trap 'docker rm "$cid" >/dev/null' EXIT
+          docker cp "$cid:/app/thelancet" "$RUNNER_TEMP/cli-bin/thelancet"
+          docker cp "$cid:/app/retraction-checker" "$RUNNER_TEMP/cli-bin/retraction-checker"
+          ls -l "$RUNNER_TEMP/cli-bin"
+
+      # Exit codes: 0 = no vulnerabilities, 3 = vulnerabilities found, anything
+      # else = the tool itself failed. Only 0 passes: a scan that did not run is
+      # not a clean scan.
+      - name: Vulnerability scan (thelancet binary)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          rc=0
+          govulncheck -mode=binary "$RUNNER_TEMP/cli-bin/thelancet" || rc=$?
+          case "$rc" in
+            0) echo "thelancet: no known vulnerabilities" ;;
+            3) echo "thelancet: govulncheck found vulnerabilities"; exit 1 ;;
+            *) echo "thelancet: govulncheck failed with exit code $rc - scan did not complete"; exit 1 ;;
+          esac
+
+      - name: Vulnerability scan (retraction-checker binary)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          rc=0
+          govulncheck -mode=binary "$RUNNER_TEMP/cli-bin/retraction-checker" || rc=$?
+          case "$rc" in
+            0) echo "retraction-checker: no known vulnerabilities" ;;
+            3) echo "retraction-checker: govulncheck found vulnerabilities"; exit 1 ;;
+            *) echo "retraction-checker: govulncheck failed with exit code $rc - scan did not complete"; exit 1 ;;
+          esac
+
       # Skipped on pull_request: a PR build proves the image builds, but has no
       # reason to hold registry credentials.
       - name: Log in to GHCR
