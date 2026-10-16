@@ -1096,19 +1096,20 @@ const ANALYSIS_LABEL={
 };
 function analysisBibTeX(key,rows){
   const label=ANALYSIS_LABEL[key]||"Bibliometric analysis";
-  // We take the query description from the module's meta row (e.g. "25 institutions · lancet").
-  let scope="";
-  const metaEl=document.querySelector("#"+key+"_res .meta");
-  if(metaEl) scope=metaEl.textContent.replace(/\s*·\s*\d+\s*\/\s*\d+\s*rows\s*$/,"").trim();
+  // Stable title (label plus the searched keyword); run details go to note.
+  const q=queryText[key];
+  const scope=exportRows(key).scope;
   const y=new Date().getFullYear();
-  const title=bibEsc(label+(scope?": "+scope:""));
+  const title=bibEsc(label+(typeof q==="string"&&q?": "+q:""));
   return "@misc{bibliovera_"+key+"_"+y+",\n"+
     "  title  = {"+title+"},\n"+
     "  author = {{Bibliovera}},\n"+
     "  year   = {"+y+"},\n"+
     "  howpublished = {Bibliovera, a Pubvera research analytics app},\n"+
     "  note   = {Bibliometric analysis of "+(rows?rows.length:0)+
-      " records; underlying publication metadata from OpenAlex (CC0)},\n"+
+      " records; underlying publication metadata from OpenAlex (CC0)"+
+      (scope?"; filters: "+bibEsc(scope):"")+
+      "; accessed "+new Date().toISOString().slice(0,10)+"},\n"+
     "  url    = {"+window.location.origin+"/}\n"+
     "}\n";
 }
