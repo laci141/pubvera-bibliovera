@@ -15,7 +15,15 @@
 //       and "'push'";
 //   (f) build uses upload-artifact, publish uses download-artifact;
 //   (g) the publish block prints digests but never compares them: no line
-//       contains "iid" together with "!=" or "exit 1".
+//       contains "iid" together with "!=" or "exit 1";
+//   (h) the build block contains no "iidfile" (build-push-action@v7 ignores
+//       it with "Unexpected input(s) 'iidfile'", so iid.txt was never written);
+//   (i) the build block has a line starting with "docker load" and a line
+//       with "docker image inspect" and "iid.txt": the image ID is read from
+//       the exported tar instead;
+//   (j) the build block contains "if-no-files-found: error", so a missing
+//       artifact file fails the upload instead of warning;
+//   (k) the build block contains "test -s", so an empty iid.txt fails.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -66,6 +74,15 @@ check("(f) build uses upload-artifact, publish uses download-artifact",
 const iidCompare = publish.split("\n").filter((l) => l.includes("iid") && (l.includes("!=") || l.includes("exit 1")));
 check("(g) publish job has no line with \"iid\" and \"!=\" or \"exit 1\" (got " + iidCompare.length + ")",
   !!publish && iidCompare.length === 0);
+check("(h) build job has no \"iidfile\"", !!build && !build.includes("iidfile"));
+// Line checks, not substring checks: the build block already says "docker load"
+// in a comment and "docker image inspect" in the label check step.
+const buildLines = build.split("\n").map((l) => l.trim());
+check("(i) build job has a \"docker load\" line and a \"docker image inspect\" line writing \"iid.txt\"",
+  buildLines.some((l) => l.startsWith("docker load")) &&
+  buildLines.some((l) => l.includes("docker image inspect") && l.includes("iid.txt")));
+check("(j) build job has \"if-no-files-found: error\"", build.includes("if-no-files-found: error"));
+check("(k) build job has \"test -s\"", build.includes("test -s"));
 
 if (failed) {
   console.error(failed + " check(s) failed");

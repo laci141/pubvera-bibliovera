@@ -223,12 +223,23 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          iidfile: ${{ runner.temp }}/iid.txt
+
+      # build-push-action@v7 does not accept an image ID file input (it warns
+      # "Unexpected input(s)" and writes its own temp file instead), so the ID
+      # is read from the exported tar itself. An empty iid.txt fails the step.
+      - name: Write image ID
+        run: |
+          set -euo pipefail
+          docker load --input "$RUNNER_TEMP/bibliovera-image.tar"
+          docker image inspect --format '{{.Id}}' "$REGISTRY/$IMAGE_NAME:latest" > "$RUNNER_TEMP/iid.txt"
+          test -s "$RUNNER_TEMP/iid.txt"
+          echo "build iid: $(cat "$RUNNER_TEMP/iid.txt")"
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: bibliovera-image
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/bibliovera-image.tar
             ${{ runner.temp }}/iid.txt
