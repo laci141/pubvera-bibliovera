@@ -39,10 +39,10 @@ jobs:
       # in the tree, and the image now builds both CLIs from a pinned upstream
       # commit.
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
@@ -129,7 +129,7 @@ jobs:
           for t in tools/*_test.js; do echo "== $t"; node "$t" || exit 1; done
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # The image carries the upstream commit its CLIs were built from as the
       # label org.pubvera.cli.commit. On pubvera-recallis that label once
@@ -143,7 +143,7 @@ jobs:
       # The second build below reuses the gha cache this one fills, so the
       # extra cost is the load into the runner's Docker, not a rebuild.
       - name: Build image for the label check
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
@@ -212,7 +212,7 @@ jobs:
       # The tags are the final GHCR names, so docker load in the publish job
       # restores them as they are.
       - name: Build and export
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           outputs: type=docker,dest=${{ runner.temp }}/bibliovera-image.tar
@@ -236,7 +236,7 @@ jobs:
           echo "build iid: $(cat "$RUNNER_TEMP/iid.txt")"
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bibliovera-image
           if-no-files-found: error
@@ -255,13 +255,13 @@ jobs:
       packages: write
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: bibliovera-image
           path: ${{ runner.temp }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
