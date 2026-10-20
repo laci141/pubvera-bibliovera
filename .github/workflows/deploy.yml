@@ -1,9 +1,10 @@
 name: Build and Deploy Bibliovera
 
 # pull_request runs every check below against the proposed change, but never
-# publishes an image: the GHCR login and the push are both gated on the event
-# not being a pull_request. Watchtower on the server deploys whatever :latest
-# points at, so a PR that could push :latest would deploy unmerged code.
+# publishes an image. Only the publish job holds packages: write, and it runs
+# only on push or workflow_dispatch from refs/heads/main. Watchtower on the
+# server deploys whatever :latest points at, so a PR that could push :latest
+# would deploy unmerged code.
 on:
   push:
     branches: [main]
@@ -29,9 +30,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-26.04
+    # Read-only token: this job also runs on pull_request. Only the publish
+    # job below, gated on push or workflow_dispatch from main, can write to GHCR.
     permissions:
       contents: read
-      packages: write
     steps:
       # No LFS checkout: the two vendored CLI binaries were the only LFS files
       # in the tree, and the image now builds both CLIs from a pinned upstream
@@ -206,23 +208,14 @@ jobs:
             *) echo "retraction-checker: govulncheck failed with exit code $rc - scan did not complete"; exit 1 ;;
           esac
 
-      # Skipped on pull_request: a PR build proves the image builds, but has no
-      # reason to hold registry credentials.
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # On pull_request the image is built but not pushed, so :latest — and
-      # therefore what Watchtower deploys — only ever moves on main.
-      - name: Build and push
+      # The image is built once and exported as a tar, never pushed from here.
+      # The tags are the final GHCR names, so docker load in the publish job
+      # restores them as they are.
+      - name: Build and export
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          outputs: type=docker,dest=${{ runner.temp }}/bibliovera-image.tar
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -230,3 +223,50 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          iidfile: ${{ runner.temp }}/iid.txt
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bibliovera-image
+          path: |
+            ${{ runner.temp }}/bibliovera-image.tar
+            ${{ runner.temp }}/iid.txt
+
+  # The only job that can write packages. It runs on push or workflow_dispatch
+  # from main only, so :latest (and what Watchtower deploys) only moves on main.
+  publish:
+    needs: build
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bibliovera-image
+          path: ${{ runner.temp }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load and push
+        run: |
+          set -euo pipefail
+          docker load --input "$RUNNER_TEMP/bibliovera-image.tar"
+          # The digests are printed for the record only and never compared, so
+          # they cannot fail the step. The pushes can: with pipefail a failing
+          # docker push still fails the step through the tee.
+          echo "build iid: $(cat "$RUNNER_TEMP/iid.txt")"
+          echo "loaded Id: $(docker image inspect --format '{{.Id}}' "$REGISTRY/$IMAGE_NAME:latest")"
+          docker push "$REGISTRY/$IMAGE_NAME:latest" | tee "$RUNNER_TEMP/push-latest.log"
+          echo "push latest $(grep -o 'digest: sha256:[0-9a-f]*' "$RUNNER_TEMP/push-latest.log" || echo 'digest: not found in push output')"
+          docker push "$REGISTRY/$IMAGE_NAME:${GITHUB_SHA}" | tee "$RUNNER_TEMP/push-sha.log"
+          echo "push sha $(grep -o 'digest: sha256:[0-9a-f]*' "$RUNNER_TEMP/push-sha.log" || echo 'digest: not found in push output')"
+          echo "RepoDigests[0]: $(docker image inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE_NAME:latest" || echo 'none')"

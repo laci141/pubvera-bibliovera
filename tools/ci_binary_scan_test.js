@@ -9,7 +9,7 @@
 // asserts:
 //   (a) /app/thelancet and /app/retraction-checker each have their own scan
 //       step that runs govulncheck with -mode=binary;
-//   (b) both scan steps come before the "Build and push" step;
+//   (b) both scan steps come before the "Build and export" step;
 //   (c) the scans install govulncheck at the existing GOVULNCHECK_VERSION;
 //   (d) exit codes other than 0 fail the step (3 = findings, others = tool
 //       error), so a scan that did not run is never a pass.
@@ -38,8 +38,8 @@ if (steps.length === 0) {
   process.exit(1);
 }
 
-const pushIdx = steps.findIndex((s) => s.name === "Build and push");
-check("deploy.yml has a \"Build and push\" step", pushIdx >= 0);
+const pushIdx = steps.findIndex((s) => s.name === "Build and export");
+check("deploy.yml has a \"Build and export\" step", pushIdx >= 0);
 
 for (const bin of ["thelancet", "retraction-checker"]) {
   const idx = steps.findIndex((s) =>
@@ -49,7 +49,7 @@ for (const bin of ["thelancet", "retraction-checker"]) {
   if (idx < 0) continue;
   check("(a) " + bin + ": the step name names the binary (\"" + step.name + "\")",
     step.name.includes(bin) && !/wrapper/i.test(step.name));
-  check("(b) " + bin + ": the scan step comes before \"Build and push\"", pushIdx >= 0 && idx < pushIdx);
+  check("(b) " + bin + ": the scan step comes before \"Build and export\"", pushIdx >= 0 && idx < pushIdx);
   check("(c) " + bin + ": govulncheck is installed at ${GOVULNCHECK_VERSION}",
     /govulncheck@\$\{GOVULNCHECK_VERSION\}/.test(step.body) || /govulncheck@\$\{\{\s*env\.GOVULNCHECK_VERSION\s*\}\}/.test(step.body));
   check("(c) " + bin + ": no new version pin", !/govulncheck@v\d/.test(step.body));
