@@ -679,9 +679,14 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 
 	// The retraction check shares the same slot pool as the analytics CLI:
 	// both are child processes on the same two cores. On exhaustion it answers
-	// 503 with Retry-After. index.html reads any non-2xx /check as "unverified",
-	// so the page does not break; a 200 here made a full server look like a
-	// successful lookup.
+	// 503 with Retry-After. index.html reads any non-2xx /check, and any 200
+	// body that carries an "error" field, as "unverified", so the page does not
+	// break. A 200 without "error" would make a full server look like a
+	// successful lookup. The CLI-failure and invalid-JSON branches below answer
+	// 200 with retracted=false plus "error" and rely on that same client rule.
+	//
+	// Keep the "error" field on those branches: removing it turns them into
+	// "no retraction found" on the page.
 	waitStart := time.Now()
 	err = cliSem.acquire(r.Context())
 	waitMS := time.Since(waitStart).Milliseconds()
