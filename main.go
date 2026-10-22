@@ -325,6 +325,8 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Revalidate on every load so a deploy is visible immediately.
+		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(data)
 	default:
 		http.NotFound(w, r)
