@@ -823,11 +823,13 @@ function downloadJSON(key,filename){
 }
 
 // Formula-injection guard (OWASP CSV Injection) for every spreadsheet cell: a
-// STRING that starts with = + - @ TAB or CR gets a leading single quote, so
-// Excel/Sheets read it as text. Numbers, booleans and null pass unchanged (a
-// growth of -33 stays a number). CSV quoting is applied after this.
+// STRING that starts with = + - @ TAB CR LF or the full-width = + - @ (U+FF1D
+// U+FF0B U+FF0D U+FF20; on the OWASP list, read as formulas in some locales
+// such as Japanese Excel) gets a leading single quote, so Excel/Sheets read it
+// as text. Numbers, booleans and null pass unchanged (a growth of -33 stays a
+// number). CSV quoting is applied after this.
 function neutralizeCell(v){
-  return (typeof v==="string"&&/^[=+\-@\t\r]/.test(v))?"'"+v:v;
+  return (typeof v==="string"&&/^[=+\-@\t\r\n\uFF1D\uFF0B\uFF0D\uFF20]/.test(v))?"'"+v:v;
 }
 
 // Invisible characters OpenAlex leaves in names (soft hyphen, zero-width
