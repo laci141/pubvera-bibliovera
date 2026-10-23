@@ -1,5 +1,6 @@
 // CSV/XLSX formula-injection test (BUG-06): neutralizeCell prefixes a single
-// quote to strings that start with = + - @ TAB or CR; numbers, booleans and
+// quote to strings that start with = + - @ TAB CR LF or the full-width
+// = + - @ (U+FF1D U+FF0B U+FF0D U+FF20, BV-03); numbers, booleans and
 // null pass through; CSV quoting is applied after neutralizing; XLSX user
 // strings stay string cells (t:"s") and never carry a formula ("f").
 //
@@ -145,6 +146,18 @@ function parseCSV(text) {
   check('neutralizeCell("@SUM(A1)") -> "\'@SUM(A1)"', nc("@SUM(A1)") === "'@SUM(A1)");
   check("neutralizeCell(TAB x) is prefixed", nc("\tx") === "'\tx");
   check("neutralizeCell(CR x) is prefixed", nc("\rx") === "'\rx");
+  // BV-03: LF and the full-width = + - @ are on the OWASP starter list.
+  check("neutralizeCell(LF =1+1) is prefixed", nc("\n=1+1") === "'\n=1+1");
+  check("neutralizeCell(U+FF1D 1+1) is prefixed", nc("\uFF1D1+1") === "'\uFF1D1+1");
+  check("neutralizeCell(U+FF0B 1+1) is prefixed", nc("\uFF0B1+1") === "'\uFF0B1+1");
+  check("neutralizeCell(U+FF0D 1) is prefixed", nc("\uFF0D1") === "'\uFF0D1");
+  check("neutralizeCell(U+FF20 SUM(A1)) is prefixed", nc("\uFF20SUM(A1)") === "'\uFF20SUM(A1)");
+  // Decision guards: a leading plain space or NBSP is not a starter.
+  check('neutralizeCell(" =1+1") unchanged', nc(" =1+1") === " =1+1");
+  check("neutralizeCell(U+00A0 =1+1) unchanged", nc("\u00A0=1+1") === "\u00A0=1+1");
+  const lfLine = String(run("toCSV")([{ title: "\n=1+1" }])).split("\r\n")[1] || "";
+  check("CSV: LF-starting value is quoted and starts with ' inside the quotes (got " + JSON.stringify(lfLine) + ")",
+    lfLine === "\"'\n=1+1\"");
   check('neutralizeCell("Normal") unchanged', nc("Normal") === "Normal");
   check('neutralizeCell("") unchanged', nc("") === "");
   check("neutralizeCell(-33) stays the number -33", nc(-33) === -33 && typeof nc(-33) === "number");
