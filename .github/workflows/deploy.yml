@@ -235,6 +235,32 @@ jobs:
           test -s "$RUNNER_TEMP/iid.txt"
           echo "build iid: $(cat "$RUNNER_TEMP/iid.txt")"
 
+      # The two govulncheck scans above ran on binaries taken from
+      # bibliovera-label-check:ci, the FIRST build. The image that is pushed is
+      # the SECOND build ("Build and export"), loaded just above. Both builds
+      # use the same gha cache, but that was an assumption. Image IDs cannot be
+      # compared (the second build adds labels and tags), so this compares the
+      # sha256 of both CLIs in the shipped image with the scanned binaries.
+      - name: Check the scanned binaries are the shipped binaries
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/shipped-bin"
+          cid=$(docker create "$REGISTRY/$IMAGE_NAME:latest")
+          trap 'docker rm "$cid" >/dev/null' EXIT
+          docker cp "$cid:/app/thelancet" "$RUNNER_TEMP/shipped-bin/thelancet"
+          docker cp "$cid:/app/retraction-checker" "$RUNNER_TEMP/shipped-bin/retraction-checker"
+          for b in thelancet retraction-checker; do
+            scanned=$(sha256sum "$RUNNER_TEMP/cli-bin/$b" | cut -d' ' -f1)
+            shipped=$(sha256sum "$RUNNER_TEMP/shipped-bin/$b" | cut -d' ' -f1)
+            echo "$b scanned: $scanned"
+            echo "$b shipped: $shipped"
+            if [ "$scanned" != "$shipped" ]; then
+              echo "$b: the scanned binary is not the shipped binary"
+              exit 1
+            fi
+          done
+          echo "scanned binaries are the shipped binaries"
+
       - name: Upload image artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
