@@ -237,7 +237,9 @@ func serveUntil(ctx context.Context, srv *http.Server, listen func() error, grac
 	return shutdownErr
 }
 
-func main() {
+// newMux is the route table main() serves; the tests use it too, so a route
+// missing here fails a test instead of only the deployed server.
+func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleRoot)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +252,13 @@ func main() {
 	mux.HandleFunc("/curate", handleCurate)
 	mux.HandleFunc("/mesh", handleMesh)
 	mux.HandleFunc("/check", handleCheck)
+	// Outside the data endpoints and outside the Caddy forward_auth paths. The
+	// exact pattern wins over the "/" catch-all.
+	mux.HandleFunc("/version", handleVersion)
+	return mux
+}
 
+func main() {
 	addr := "127.0.0.1:8080"
 	if a := strings.TrimSpace(os.Getenv("ADDR")); a != "" {
 		addr = a
@@ -266,7 +274,7 @@ func main() {
 	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           newMux(),
 		ReadHeaderTimeout: srvReadHeaderTimeout,
 		ReadTimeout:       srvReadTimeout,
 		WriteTimeout:      srvWriteTimeout,

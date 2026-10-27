@@ -51,10 +51,14 @@ RUN CGO_ENABLED=0 go install -trimpath \
 
 # ---- Stage 2: build the web wrapper for linux/amd64 -------------------------
 FROM golang:1.26-alpine AS web-builder
+ARG APP_VERSION=dev
 WORKDIR /build
 COPY go.mod ./
-COPY main.go semaphore.go ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/server .
+COPY main.go semaphore.go version.go ./
+# APP_VERSION is the CalVer version from the release workflow, "dev" for any
+# other build. -X names the variable main.appVersion: for package main the
+# linker uses "main", not the module path.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X main.appVersion=${APP_VERSION}" -o /out/server .
 
 # ---- Stage 3: runtime -------------------------------------------------------
 # Pinned to a minor release, not :latest. :latest moves on its own, so a
@@ -72,9 +76,12 @@ COPY --from=cli-builder /go/bin/retraction-checker-pp-cli ./retraction-checker
 COPY index.html ./index.html
 RUN chmod +x ./thelancet ./retraction-checker ./server && mkdir -p /app/data && chown app:app /app/data
 
-# The upstream commit both CLIs were built from, readable with docker inspect.
+# The upstream commit both CLIs were built from and the CalVer version the
+# server reports on /version, both readable with docker inspect.
 ARG PP_LIBRARY_COMMIT
+ARG APP_VERSION=dev
 LABEL org.pubvera.cli.commit=${PP_LIBRARY_COMMIT}
+LABEL org.opencontainers.image.version=${APP_VERSION}
 
 ENV CLI_BIN=/app/thelancet
 ENV THELANCET_DB=/app/data/data.db
