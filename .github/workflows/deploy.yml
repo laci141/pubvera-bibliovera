@@ -27,6 +27,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Default for every job: read-only. Only the publish job below writes.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-26.04
@@ -42,8 +46,12 @@ jobs:
       # No LFS checkout: the two vendored CLI binaries were the only LFS files
       # in the tree, and the image now builds both CLIs from a pinned upstream
       # commit.
+      # persist-credentials: false keeps the token out of .git/config. The
+      # repository is public, so the version step's git ls-remote needs none.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # CalVer YYYY.MM.DD.N: the UTC date plus 1 + the number of tags
       # vYYYY.MM.DD.* already on origin. Every non-pull_request run on main is
@@ -293,6 +301,7 @@ jobs:
         with:
           name: bibliovera-image
           if-no-files-found: error
+          retention-days: 1
           path: |
             ${{ runner.temp }}/bibliovera-image.tar
             ${{ runner.temp }}/iid.txt
