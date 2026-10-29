@@ -157,6 +157,29 @@ for (const jb of jobs) {
 }
 check("no workflow-level contents: write", !lines.some((l) => /^  contents:\s*write/.test(l)));
 
+// The default for every job is read-only: a top-level "permissions:" block
+// holding exactly contents: read, before "jobs:".
+const topAt = lines.findIndex((l) => l === "permissions:");
+const topPerms = [];
+for (let j = topAt + 1; topAt >= 0 && j < lines.length; j++) {
+  const l = lines[j];
+  if (l.trim() === "" || l.trim().startsWith("#")) continue;
+  if (!/^ /.test(l)) break;
+  topPerms.push(l.trim());
+}
+check("top-level permissions is contents: read (found " + JSON.stringify(topPerms) + ")",
+  topAt >= 0 && topAt < jobsAt && JSON.stringify(topPerms) === JSON.stringify(["contents: read"]));
+
+// The build checkout keeps no token in .git/config (the repository is public).
+const checkout = step("Checkout");
+check("build Checkout has persist-credentials: false",
+  checkout.start >= 0 && jobOf(checkout.start).name === "build" && checkout.lines.some((l) => l.trim() === "persist-credentials: false"));
+
+// The image artifact lives one day: it also runs on pull requests.
+const upload = step("Upload image artifact");
+check("Upload image artifact has retention-days: 1",
+  upload.start >= 0 && jobOf(upload.start).name === "build" && upload.lines.some((l) => l.trim() === "retention-days: 1"));
+
 // The existing concurrency block stays as it is: PR runs cancel, main runs
 // queue (cancel-in-progress is false on main).
 const concs = lines.map((l, i) => (l === "concurrency:" ? i : -1)).filter((i) => i >= 0);
