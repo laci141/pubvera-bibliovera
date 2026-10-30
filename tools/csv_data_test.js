@@ -119,8 +119,9 @@ function parseCSV(text) {
   await run("runRead()");
   const page = byId("read_res").innerHTML;
 
-  // The menu item of the rendered row is the call under test: its onclick decides the filename.
-  const call = (page.match(/onclick="(downloadCSVData\([^)]*\))/) || [])[1] || "";
+  // The menu item of the rendered row is the call under test: its data-key and data-name decide the filename.
+  const item = page.match(/data-action="export" data-call="downloadCSVData" data-key="([^"]*)" data-name="([^"]*)"/);
+  const call = item ? "downloadCSVData('" + item[1] + "','" + item[2] + "')" : "";
   let data = "", dataType = "", dataName = "";
   if (call) {
     const before = blobs.length;
@@ -176,7 +177,7 @@ function parseCSV(text) {
   const csvBtn = (page.match(/<button[^>]*role="menuitem"[^>]*>CSV<\/button>/) || [""])[0];
   check("g. CSV item title is the plain-CSV hint",
     csvBtn.includes(' title="Plain CSV (RFC 4180) for pandas, R, Zotero. For Excel, use Excel (.xlsx)."'));
-  check("g. no menu item calls the legacy downloadCSV(", !/onclick="downloadCSV\(/.test(page));
+  check("g. no menu item calls the legacy downloadCSV(", !/data-call="downloadCSV"/.test(page));
   check("f. data CSV MIME is text/csv;charset=utf-8 (got " + JSON.stringify(dataType) + ")", dataType === "text/csv;charset=utf-8");
 
   if (failed) {

@@ -16,8 +16,8 @@ const buttons = count(/<button type="button" class="card"/g);
 const divCards = count(/<div class="card"/g);
 check("A1 six <button type=\"button\" class=\"card\"> and no <div class=\"card\"> (" + buttons + " buttons, " + divCards + " divs)", buttons === 6 && divCards === 0);
 
-const clickOnNonControl = count(/<(div|span|li|tr|article)[^>]*onclick/g);
-check("A2 no onclick on div/span/li/tr/article (" + clickOnNonControl + ")", clickOnNonControl === 0);
+const clickOnNonControl = count(/<(div|span|li|tr|article)[^>]*data-action/g);
+check("A2 no data-action on div/span/li/tr/article (" + clickOnNonControl + ")", clickOnNonControl === 0);
 
 const dialogs = count(/role="dialog"/g), modalAria = count(/aria-modal="true"/g);
 check("A3 six role=\"dialog\" and six aria-modal=\"true\" (" + dialogs + ", " + modalAria + ")", dialogs === 6 && modalAria === 6);
@@ -59,8 +59,10 @@ const ellipsisRules = lbSubRules.filter((r) => /text-overflow\s*:\s*ellipsis/.te
 check("A13 no text-overflow:ellipsis on .lb/.sub (" + lbSubRules.length + " rules checked, " + ellipsisRules.length + " with ellipsis)", lbSubRules.length > 0 && ellipsisRules.length === 0);
 
 // WebKit does not focus a <button> on mouse click, so each card passes itself as the opener.
-const cardsWithThis = count(/<button type="button" class="card"[^>]*onclick="openModal\('[a-z]+',this\)"/g);
-check("A14 six card buttons call openModal('<key>',this) (" + cardsWithThis + ")", cardsWithThis === 6);
+const cardsWithAction = count(/<button type="button" class="card"[^>]*data-action="open-modal" data-modal="[a-z]+"/g);
+const clickFn = fn("onActionClick");
+check("A14 six card buttons carry data-action=\"open-modal\" data-modal=\"<key>\" and onActionClick passes the card as the opener (" + cardsWithAction + ")",
+  cardsWithAction === 6 && /openModal\(el\.dataset\.modal,el\)/.test(clickFn));
 
 check("A15 openModal takes an opener and stores opener||document.activeElement",
   /^function openModal\(\w+,\s*opener\)/.test(open) && open.includes("modalOpener=opener||document.activeElement"));

@@ -459,27 +459,27 @@
 </section>
 
 <section class="bento">
-  <button type="button" class="card" style="--c:#00d4ff" onclick="openModal('aff',this)">
+  <button type="button" class="card" style="--c:#00d4ff" data-action="open-modal" data-modal="aff">
     <span class="ic">👥</span>
     <span class="tx"><span class="lb">Affiliations</span><span class="sub">Institution growth</span></span>
   </button>
-  <button type="button" class="card" style="--c:#7c3aed" onclick="openModal('auth',this)">
+  <button type="button" class="card" style="--c:#7c3aed" data-action="open-modal" data-modal="auth">
     <span class="ic">✍️</span>
     <span class="tx"><span class="lb">Authors</span><span class="sub">Ranked by citations</span></span>
   </button>
-  <button type="button" class="card" style="--c:#22c55e" onclick="openModal('drift',this)">
+  <button type="button" class="card" style="--c:#22c55e" data-action="open-modal" data-modal="drift">
     <span class="ic">📈</span>
     <span class="tx"><span class="lb">Topic Trends</span><span class="sub">Rising &amp; fading themes</span></span>
   </button>
-  <button type="button" class="card" style="--c:#38bdf8" onclick="openModal('read',this)">
+  <button type="button" class="card" style="--c:#38bdf8" data-action="open-modal" data-modal="read">
     <span class="ic">📚</span>
     <span class="tx"><span class="lb">Reading List</span><span class="sub">Ranked + retraction-checked</span></span>
   </button>
-  <button type="button" class="card" style="--c:#f59e0b" onclick="openModal('rise',this)">
+  <button type="button" class="card" style="--c:#f59e0b" data-action="open-modal" data-modal="rise">
     <span class="ic">🚀</span>
     <span class="tx"><span class="lb">Rising Papers</span><span class="sub">Fastest-cited fresh work</span></span>
   </button>
-  <button type="button" class="card" style="--c:#ec4899" onclick="openModal('mesh',this)">
+  <button type="button" class="card" style="--c:#ec4899" data-action="open-modal" data-modal="mesh">
     <span class="ic">🕸️</span>
     <span class="tx"><span class="lb">Collaboration</span><span class="sub">Co-authorship network</span></span>
   </button>
@@ -487,7 +487,7 @@
 
 <!-- Affiliations modal -->
 <div class="modal" id="affModal"><div class="mc" style="--c:#00d4ff" role="dialog" aria-modal="true" aria-labelledby="affModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" aria-label="Close" onclick="closeModal('aff')">&times;</button></div>
+  <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="aff">&times;</button></div>
   <label>Journal</label>
   <select id="aff_journal">
     <option value="">All Lancet journals</option>
@@ -499,23 +499,23 @@
     <option value="lancet-digital-health">Lancet Digital Health</option>
   </select>
   <label>Window (years) · <span class="val" id="aff_years_v">5</span></label>
-  <input type="range" id="aff_years" min="1" max="20" value="5" oninput="aff_years_v.textContent=this.value">
+  <input type="range" id="aff_years" min="1" max="20" value="5" data-mirror="aff_years_v">
   <label>Threshold (min recent pubs) · <span class="val" id="aff_thr_v">2</span></label>
-  <input type="range" id="aff_thr" min="1" max="10" value="2" oninput="aff_thr_v.textContent=this.value">
+  <input type="range" id="aff_thr" min="1" max="10" value="2" data-mirror="aff_thr_v">
   <!-- Not a filter: the server keeps every institution and moves those below
        this number to the end of the list, flagged as a low base. "Min" read as
        a cutoff, which it has never been. -->
   <label>Low prior base · sorted last below <span class="val" id="aff_minp_v">5</span></label>
-  <input type="range" id="aff_minp" min="0" max="20" value="5" oninput="aff_minp_v.textContent=this.value">
+  <input type="range" id="aff_minp" min="0" max="20" value="5" data-mirror="aff_minp_v">
   <label>Limit · <span class="val" id="aff_lim_v">25</span></label>
-  <input type="range" id="aff_lim" min="1" max="100" value="25" oninput="aff_lim_v.textContent=this.value">
-  <button class="btn" onclick="runAff()">Run Analysis</button>
+  <input type="range" id="aff_lim" min="1" max="100" value="25" data-mirror="aff_lim_v">
+  <button class="btn" data-action="run-aff">Run Analysis</button>
   <div class="results" id="aff_res"></div>
 </div></div>
 
 <!-- Authors modal -->
 <div class="modal" id="authModal"><div class="mc" style="--c:#7c3aed" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" aria-label="Close" onclick="closeModal('auth')">&times;</button></div>
+  <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="auth">&times;</button></div>
   <label>Institution (substring, optional)</label>
   <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
   <div class="lenmsg err" id="auth_inst_msg" aria-live="polite"></div>
@@ -527,16 +527,16 @@
     <option value="lancet-oncology">Lancet Oncology</option>
   </select>
   <label>Min works · <span class="val" id="auth_minw_v">2</span></label>
-  <input type="range" id="auth_minw" min="1" max="10" value="2" oninput="auth_minw_v.textContent=this.value">
+  <input type="range" id="auth_minw" min="1" max="10" value="2" data-mirror="auth_minw_v">
   <label>Authors shown (max) · <span class="val" id="auth_lim_v">25</span></label>
-  <input type="range" id="auth_lim" min="1" max="300" value="25" oninput="auth_lim_v.textContent=this.value">
-  <button class="btn" onclick="runAuth()">Run Analysis</button>
+  <input type="range" id="auth_lim" min="1" max="300" value="25" data-mirror="auth_lim_v">
+  <button class="btn" data-action="run-auth">Run Analysis</button>
   <div class="results" id="auth_res"></div>
 </div></div>
 
 <!-- Topic Trends (drift) modal -->
 <div class="modal" id="driftModal"><div class="mc" style="--c:#22c55e" role="dialog" aria-modal="true" aria-labelledby="driftModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" aria-label="Close" onclick="closeModal('drift')">&times;</button></div>
+  <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="drift">&times;</button></div>
   <label>Journal</label>
   <select id="drift_journal">
     <option value="">All Lancet journals</option>
@@ -550,22 +550,22 @@
   <div class="row2">
     <div>
       <label>Earlier window · <span class="val" id="drift_w1_v">2015–2019</span></label>
-      <input type="range" id="drift_w1" min="2005" max="2020" value="2015" oninput="setW1(this.value)">
+      <input type="range" id="drift_w1" min="2005" max="2020" value="2015" data-input="set-w1">
     </div>
     <div>
       <label>Later window · <span class="val" id="drift_w2_v">2020–2024</span></label>
-      <input type="range" id="drift_w2" min="2010" max="2024" value="2020" oninput="setW2(this.value)">
+      <input type="range" id="drift_w2" min="2010" max="2024" value="2020" data-input="set-w2">
     </div>
   </div>
   <label>Top topics · <span class="val" id="drift_top_v">15</span></label>
-  <input type="range" id="drift_top" min="5" max="40" value="15" oninput="drift_top_v.textContent=this.value">
-  <button class="btn" onclick="runDrift()">Run Analysis</button>
+  <input type="range" id="drift_top" min="5" max="40" value="15" data-mirror="drift_top_v">
+  <button class="btn" data-action="run-drift">Run Analysis</button>
   <div class="results" id="drift_res"></div>
 </div></div>
 
 <!-- Reading List (curate + retraction) modal -->
 <div class="modal" id="readModal"><div class="mc" style="--c:#38bdf8" role="dialog" aria-modal="true" aria-labelledby="readModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" aria-label="Close" onclick="closeModal('read')">&times;</button></div>
+  <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="read">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
   <div class="lenmsg err" id="read_topic_msg" aria-live="polite"></div>
@@ -579,14 +579,14 @@
     </div>
     <div>
       <label>Limit · <span class="val" id="read_lim_v">15</span></label>
-      <input type="range" id="read_lim" min="5" max="40" value="15" oninput="read_lim_v.textContent=this.value">
+      <input type="range" id="read_lim" min="5" max="40" value="15" data-mirror="read_lim_v">
     </div>
   </div>
   <div class="row2">
     <div>
       <label for="read_year_n">Min year · <span class="val" id="read_year_v">Any</span></label>
       <div class="numpair">
-        <input type="range" id="read_year" min="2005" max="2026" value="2005" aria-label="Min year slider" oninput="numFromSlider('read_year')">
+        <input type="range" id="read_year" min="2005" max="2026" value="2005" aria-label="Min year slider" data-input="num-from-slider" data-id="read_year">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="read_year_n" placeholder="Any" aria-describedby="read_year_n_msg">
       </div>
       <div class="lenmsg err" id="read_year_n_msg" aria-live="polite"></div>
@@ -594,19 +594,19 @@
     <div>
       <label for="read_cites_n">Min citations · <span class="val" id="read_cites_v">Any</span></label>
       <div class="numpair">
-        <input type="range" id="read_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" oninput="numFromSlider('read_cites')">
+        <input type="range" id="read_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" data-input="num-from-slider" data-id="read_cites">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="read_cites_n" placeholder="Any" aria-describedby="read_cites_n_msg">
       </div>
       <div class="lenmsg err" id="read_cites_n_msg" aria-live="polite"></div>
     </div>
   </div>
-  <button class="btn" onclick="runRead()">Build Reading List</button>
+  <button class="btn" data-action="run-read">Build Reading List</button>
   <div class="results" id="read_res"></div>
 </div></div>
 
 <!-- Rising Papers modal -->
 <div class="modal" id="riseModal"><div class="mc" style="--c:#f59e0b" role="dialog" aria-modal="true" aria-labelledby="riseModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" aria-label="Close" onclick="closeModal('rise')">&times;</button></div>
+  <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="rise">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
   <div class="lenmsg err" id="rise_topic_msg" aria-live="polite"></div>
@@ -625,14 +625,14 @@
     </div>
     <div>
       <label>Rows shown · <span class="val" id="rise_lim_v">40</span></label>
-      <input type="range" id="rise_lim" min="10" max="60" value="40" oninput="rise_lim_v.textContent=this.value">
+      <input type="range" id="rise_lim" min="10" max="60" value="40" data-mirror="rise_lim_v">
     </div>
   </div>
   <div class="row2">
     <div>
       <label for="rise_year_n">Min year (only papers from this year on) · <span class="val" id="rise_year_v">2018</span></label>
       <div class="numpair">
-        <input type="range" id="rise_year" min="2005" max="2024" value="2018" aria-label="Min year slider" oninput="numFromSlider('rise_year')">
+        <input type="range" id="rise_year" min="2005" max="2024" value="2018" aria-label="Min year slider" data-input="num-from-slider" data-id="rise_year">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="rise_year_n" value="2018" placeholder="Any" aria-describedby="rise_year_n_msg">
       </div>
       <div class="lenmsg err" id="rise_year_n_msg" aria-live="polite"></div>
@@ -640,25 +640,25 @@
     <div>
       <label for="rise_cites_n">Min citations · <span class="val" id="rise_cites_v">Any</span></label>
       <div class="numpair">
-        <input type="range" id="rise_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" oninput="numFromSlider('rise_cites')">
+        <input type="range" id="rise_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" data-input="num-from-slider" data-id="rise_cites">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="rise_cites_n" placeholder="Any" aria-describedby="rise_cites_n_msg">
       </div>
       <div class="lenmsg err" id="rise_cites_n_msg" aria-live="polite"></div>
     </div>
   </div>
-  <button class="btn" onclick="runRise()">Find Rising Papers</button>
+  <button class="btn" data-action="run-rise">Find Rising Papers</button>
   <div class="results" id="rise_res"></div>
 </div></div>
 
 <!-- Collaboration (mesh) modal -->
 <div class="modal" id="meshModal"><div class="mc" style="--c:#ec4899" role="dialog" aria-modal="true" aria-labelledby="meshModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" aria-label="Close" onclick="closeModal('mesh')">&times;</button></div>
+  <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="mesh">&times;</button></div>
   <label>Institution</label>
   <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
   <div class="lenmsg err" id="mesh_org_msg" aria-live="polite"></div>
   <label>Max co-authorship pairs · <span class="val" id="mesh_lim_v">40</span></label>
-  <input type="range" id="mesh_lim" min="10" max="500" step="10" value="40" oninput="mesh_lim_v.textContent=this.value">
-  <button class="btn" onclick="runMesh()">Map Network</button>
+  <input type="range" id="mesh_lim" min="10" max="500" step="10" value="40" data-mirror="mesh_lim_v">
+  <button class="btn" data-action="run-mesh">Map Network</button>
   <div class="results" id="mesh_res"></div>
 </div></div>
 
@@ -1183,9 +1183,9 @@ function metaRow(text,key,filename,extra){
   // One trigger, one menu per row; the id comes from the row key, which is unique per result.
   const mid="dlm-"+key;
   const item=(call,name,label,title)=>'<button type="button" role="menuitem"'+(title?' title="'+title+'"':'')+
-    ' onclick="'+call+'(\''+key+'\',\''+name+'\');closeExportMenus(true)">'+label+'</button>';
+    ' data-action="export" data-call="'+call+'" data-key="'+key+'" data-name="'+name+'">'+label+'</button>';
   const exportMenu='<div class="dl-wrap">'+
-    '<button type="button" class="dl" aria-haspopup="menu" aria-expanded="false" aria-controls="'+mid+'" onclick="toggleExportMenu(this)">⬇ Export ▾</button>'+
+    '<button type="button" class="dl" aria-haspopup="menu" aria-expanded="false" aria-controls="'+mid+'" data-action="toggle-export-menu">⬇ Export ▾</button>'+
     '<div class="dl-menu" role="menu" id="'+mid+'" hidden>'+
     item("downloadXLSX",xlsxName,"Excel")+
     item("downloadCSVData",csvName,"CSV","Plain CSV (RFC 4180) for pandas, R, Zotero. For Excel, use Excel (.xlsx).")+
@@ -1373,7 +1373,7 @@ function errorHTML(e){
     // The raw error ("missing/invalid token") tells the user nothing they can
     // act on, and the remedy is always the same, so it is not shown.
     const btn=(window.pubveraAuth&&window.pubveraAuth.enabled)
-      ? '<button class="btn" onclick="pubveraSignIn()">Sign in with Google</button>'
+      ? '<button class="btn" data-action="sign-in">Sign in with Google</button>'
       : '';
     return '<div class="errcard"><h4>Sign-in required</h4>'+
       '<p>Please sign in to run this analysis.</p>'+btn+'</div>';
@@ -1764,7 +1764,7 @@ async function runMesh(){
     queryFilters.mesh=['org "'+org+'"',"limit "+p.get("limit")];
     if(!pairs.length){res.innerHTML='<p class="meta">No co-authorship pairs found for "'+esc(org)+'". Try a broader institution name.</p>';return;}
     const authorCount=new Set(pairs.flatMap(p=>[p.author_a,p.author_b])).size;
-    res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json','<button class="dl" title="The graph as shown, plus the co-author list when a researcher is pinned" onclick="downloadMeshPNG()">⬇ PNG</button>')+
+    res.innerHTML=metaRow(pairs.length+' co-authorship pairs · '+authorCount+' authors · '+esc(org),'mesh','bibliovera-collaboration.json','<button class="dl" title="The graph as shown, plus the co-author list when a researcher is pinned" data-action="mesh-png">⬇ PNG</button>')+
       '<details class="mesh-groups" id="meshGroups"><summary>Groups (0)</summary><div id="meshGroupsBody"></div></details>'+
       '<div class="graph-wrap" id="graphWrap"></div>'+
       '<div class="zoom-hint" id="zoomHint">'+
@@ -2670,6 +2670,44 @@ document.addEventListener("click",e=>{
   });
   rows.forEach(r=>tbody.appendChild(r));
 });
+
+// ── Delegated actions (no inline on*= handlers, so a CSP can block them) ────────
+// data-action: click. data-mirror: a range input writes its value into the label with
+// that id, as the old oninput did. data-input: the range inputs that call a function.
+function onActionClick(e){
+  const el=e.target&&e.target.closest&&e.target.closest("[data-action]");
+  if(!el||el.disabled)return;
+  const a=el.dataset.action;
+  if(a==="open-modal")openModal(el.dataset.modal,el);
+  else if(a==="close-modal")closeModal(el.dataset.modal);
+  else if(a==="run-aff")runAff();
+  else if(a==="run-auth")runAuth();
+  else if(a==="run-drift")runDrift();
+  else if(a==="run-read")runRead();
+  else if(a==="run-rise")runRise();
+  else if(a==="run-mesh")runMesh();
+  else if(a==="toggle-export-menu")toggleExportMenu(el);
+  else if(a==="export"){
+    const c=el.dataset.call, k=el.dataset.key, n=el.dataset.name;
+    if(c==="downloadXLSX")downloadXLSX(k,n);
+    else if(c==="downloadCSVData")downloadCSVData(k,n);
+    else if(c==="downloadJSON")downloadJSON(k,n);
+    else if(c==="downloadBibTeX")downloadBibTeX(k,n);
+    closeExportMenus(true);
+  }
+  else if(a==="mesh-png")downloadMeshPNG();
+  else if(a==="sign-in")pubveraSignIn();
+}
+function onActionInput(e){
+  const t=e.target, d=t&&t.dataset;
+  if(!d)return;
+  if(d.mirror){const label=document.getElementById(d.mirror);if(label)label.textContent=t.value;}
+  else if(d.input==="set-w1")setW1(t.value);
+  else if(d.input==="set-w2")setW2(t.value);
+  else if(d.input==="num-from-slider")numFromSlider(d.id);
+}
+document.addEventListener("click",onActionClick);
+document.addEventListener("input",onActionInput);
 </script>
 
 <!-- GOOGLE SIGN-IN (Supabase).
