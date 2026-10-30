@@ -42,16 +42,16 @@ check("E1 the row has exactly one aria-haspopup=\"menu\" trigger and one role=\"
 
 const items = [...menuHtml.matchAll(/<button type="button" role="menuitem"([^>]*)>([^<]*)<\/button>/g)];
 const want = [
-  ["Excel", "downloadXLSX('aff','bibliovera-aff.xlsx')"],
-  ["CSV", "downloadCSVData('aff','bibliovera-aff.csv')", "Plain CSV (RFC 4180) for pandas, R, Zotero. For Excel, use Excel (.xlsx)."],
-  ["JSON", "downloadJSON('aff','bibliovera-aff.json')"],
-  ["BibTeX", "downloadBibTeX('aff','bibliovera-aff.bib')"],
+  ["Excel", 'data-action="export" data-call="downloadXLSX" data-key="aff" data-name="bibliovera-aff.xlsx"'],
+  ["CSV", 'data-action="export" data-call="downloadCSVData" data-key="aff" data-name="bibliovera-aff.csv"', "Plain CSV (RFC 4180) for pandas, R, Zotero. For Excel, use Excel (.xlsx)."],
+  ["JSON", 'data-action="export" data-call="downloadJSON" data-key="aff" data-name="bibliovera-aff.json"'],
+  ["BibTeX", 'data-action="export" data-call="downloadBibTeX" data-key="aff" data-name="bibliovera-aff.bib"'],
 ];
 const okItems = items.length === 4 && want.every(([label, call, title], i) =>
-  items[i] && items[i][2] === label && items[i][1].includes('onclick="' + call) &&
+  items[i] && items[i][2] === label && items[i][1].includes(call) &&
   (title === undefined || items[i][1].includes(' title="' + title + '"')));
 check("E2 the menu has four role=\"menuitem\" buttons (Excel, CSV, JSON, BibTeX) in this order; CSV calls downloadCSVData with <base>.csv and the plain-CSV title (" + items.length + " items: " + items.map(m => m[2]).join(" | ") + ")", okItems);
-check("E2b no menu item calls the legacy downloadCSV (sep= line, provenance line, BOM)", !/onclick="downloadCSV\(/.test(menuHtml));
+check("E2b no menu item calls the legacy downloadCSV (sep= line, provenance line, BOM)", !/data-call="downloadCSV"/.test(menuHtml));
 
 const toggle = fn("toggleExportMenu"), closeAll = fn("closeExportMenus");
 check("E3 trigger has aria-expanded=\"false\" and the open/close JS sets \"true\" and \"false\"",
@@ -69,8 +69,8 @@ check("E5 arrow-key handler in the menu: ArrowDown/ArrowUp wrap, Home/End jump, 
   /"ArrowDown"/.test(kd) && /"ArrowUp"/.test(kd) && /"Home"/.test(kd) && /"End"/.test(kd) && /"Tab"/.test(kd) &&
   /%items\.length/.test(kd) && /\.focus\(\)/.test(kd));
 
-const clickOnNonControl = count(src, /<(div|span|li|tr|article)[^>]*onclick/g) + count(html, /<(div|span|li|tr|article)[^>]*onclick/g);
-check("E6 no onclick on div/span/li/tr/article (" + clickOnNonControl + ")", clickOnNonControl === 0);
+const clickOnNonControl = count(src, /<(div|span|li|tr|article)[^>]*data-action/g) + count(html, /<(div|span|li|tr|article)[^>]*data-action/g);
+check("E6 no data-action on div/span/li/tr/article (" + clickOnNonControl + ")", clickOnNonControl === 0);
 
 // The menu panel shares the glass rule of .errcard/.mesh-groups (so the global glass line count stays what it was).
 const style = src.slice(src.indexOf("<style"), src.indexOf("</style>"));
