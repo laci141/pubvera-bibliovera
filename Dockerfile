@@ -54,7 +54,7 @@ FROM golang:1.26-alpine AS web-builder
 ARG APP_VERSION=dev
 WORKDIR /build
 COPY go.mod ./
-COPY main.go semaphore.go version.go ./
+COPY main.go semaphore.go version.go csp.go ./
 # APP_VERSION is the CalVer version from the release workflow, "dev" for any
 # other build. -X names the variable main.appVersion: for package main the
 # linker uses "main", not the module path.
