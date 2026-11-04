@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// POST /csp-report, the collector for the connect-src Report-Only policy. Every
-// request goes through newMux(), the route table main() serves, so a missing
-// route fails here too.
+// POST /csp-report, the collector for violations of the enforcing
+// Content-Security-Policy. Every request goes through newMux(), the route
+// table main() serves, so a missing route fails here too.
 
 // captureCSPLog sends the standard logger to a buffer without timestamps and
 // gives the collector a fresh flood gate on the given clock.

@@ -11,15 +11,17 @@ import (
 	"testing"
 )
 
-// CSP phase 2: every <script> tag in index.html carries nonce="__CSP_NONCE__",
-// and each index response replaces that marker with a fresh nonce named in the
-// enforced Content-Security-Policy header. All requests go through handleRoot
+// CSP: every <script> tag in index.html carries nonce="__CSP_NONCE__", and
+// each index response replaces that marker with a fresh nonce named in the
+// enforced Content-Security-Policy header, which also enforces connect-src.
+// There is no Report-Only header. All requests go through handleRoot
 // in-process (httptest), like root_cache_test.go.
 
 // wantPolicy is written out here rather than taken from contentSecurityPolicy,
-// so a change to any directive in csp.go fails a test.
-func wantPolicy(nonce string) string {
-	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+// so a change to any directive in csp.go fails a test. tail is the connect-src
+// part, such as wantTailSelf or wantTailSupa.
+func wantPolicy(nonce, tail string) string {
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" + tail
 }
 
 // The header names and the marker are spelled out so a renamed constant cannot
@@ -97,37 +99,33 @@ func TestCSPHeaderNonceMatchesEveryBodyNonce(t *testing.T) {
 }
 
 func TestCSPHeaderIsEnforcedWithExactPolicy(t *testing.T) {
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
 	nonce, _, h := indexNonce(t, "/")
-	if got := h.Get(enforcingHeader); got != wantPolicy(nonce) {
-		t.Errorf("%s = %q, want %q", enforcingHeader, got, wantPolicy(nonce))
+	if got := h.Values(enforcingHeader); len(got) != 1 || got[0] != wantPolicy(nonce, wantTailSelf) {
+		t.Errorf("%s = %q, want [%q]", enforcingHeader, got, wantPolicy(nonce, wantTailSelf))
 	}
 	if cspHeaderName != enforcingHeader {
 		t.Errorf("cspHeaderName = %q, want %q", cspHeaderName, enforcingHeader)
 	}
 }
 
-// TestCSPIndexReportOnlyIsConnectSrcOnly does not use indexNonce, so a
-// missing enforcing header does not hide the Report-Only check. The
-// Report-Only policy carries connect-src alone: a script-src copy there would
-// report every blocked inline script a second time.
-func TestCSPIndexReportOnlyIsConnectSrcOnly(t *testing.T) {
+// TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly does not use indexNonce, so
+// a missing enforcing header does not hide the Report-Only check. connect-src
+// lives in the one enforcing header; a Report-Only header must not come back.
+func TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly(t *testing.T) {
 	t.Setenv("SUPABASE_URL", "")
 	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
 	for _, path := range []string{"/", "/index.html"} {
 		rec := getRoot(t, path)
-		if got := rec.Header().Get(enforcingHeader); got == "" {
-			t.Errorf("GET %s: %s = %q, want a policy", path, enforcingHeader, got)
+		csp := rec.Header().Values(enforcingHeader)
+		if len(csp) != 1 {
+			t.Errorf("GET %s: %s = %q, want exactly one policy", path, enforcingHeader, csp)
+		} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1], wantTailSelf) {
+			t.Errorf("GET %s: %s = %q, want the policy ending %q", path, enforcingHeader, csp[0], wantTailSelf)
 		}
-		ro := rec.Header().Values(reportOnlyHeader)
-		if len(ro) != 1 || ro[0] != wantReportOnlySelf {
-			t.Errorf("GET %s: %s = %q, want [%q]", path, reportOnlyHeader, ro, wantReportOnlySelf)
-		}
-		for _, v := range ro {
-			for _, bad := range []string{"script-src", "style-src", "nonce"} {
-				if strings.Contains(v, bad) {
-					t.Errorf("GET %s: %s = %q, must not contain %s", path, reportOnlyHeader, v, bad)
-				}
-			}
+		if ro := rec.Header().Values(reportOnlyHeader); len(ro) != 0 {
+			t.Errorf("GET %s: %s = %q, want none", path, reportOnlyHeader, ro)
 		}
 		if got := rec.Header().Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 			t.Errorf("GET %s: %s = %q, want %q", path, reportingEndpointsHeader, got, wantReportingEndpoints)
@@ -138,17 +136,17 @@ func TestCSPIndexReportOnlyIsConnectSrcOnly(t *testing.T) {
 const (
 	reportingEndpointsHeader = "Reporting-Endpoints"
 	wantReportingEndpoints   = `csp="/csp-report"`
-	wantReportOnlySelf       = "connect-src 'self'; report-to csp; report-uri /csp-report"
-	wantReportOnlySupa       = "connect-src 'self' https://abc.supabase.co; report-to csp; report-uri /csp-report"
+	wantTailSelf             = "; connect-src 'self'; report-to csp; report-uri /csp-report"
+	wantTailSupa             = "; connect-src 'self' https://abc.supabase.co; report-to csp; report-uri /csp-report"
 	emptyConfigJSON          = `{"supabase_url":"","supabase_anon_key":""}` + "\n"
 )
 
-// connect-src Report-Only. supabaseConfig feeds both /config.json and the
-// header, so each case pins the helper, the exact Report-Only value, the
-// unchanged enforcing policy and the /config.json body byte for byte. The
-// /config.json bodies are the output of the code before supabaseConfig
-// existed (they pass on that code).
-func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
+// Enforced connect-src. supabaseConfig feeds both /config.json and the header,
+// so each case pins the helper, the one exact enforcing policy with its
+// connect-src part, the absent Report-Only header and the /config.json body
+// byte for byte. The /config.json bodies are the output of the code before
+// supabaseConfig existed (they pass on that code).
+func TestCSPEnforcedConnectSrcTable(t *testing.T) {
 	const key = "sb_publishable_k"
 	cfg := func(u string) string {
 		return `{"supabase_url":"` + u + `","supabase_anon_key":"` + key + `"}` + "\n"
@@ -156,23 +154,23 @@ func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
 	for _, tc := range []struct {
 		name, url, key           string
 		wantURL, wantKey, origin string
-		wantRO, wantCfg          string
+		wantTail, wantCfg        string
 	}{
-		{"both unset", "", "", "", "", "", wantReportOnlySelf, emptyConfigJSON},
+		{"both unset", "", "", "", "", "", wantTailSelf, emptyConfigJSON},
 		{"both set with a path", "https://abc.supabase.co/rest/v1?x=1#f", key,
-			"https://abc.supabase.co/rest/v1?x=1#f", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://abc.supabase.co/rest/v1?x=1#f")},
+			"https://abc.supabase.co/rest/v1?x=1#f", key, "https://abc.supabase.co", wantTailSupa, cfg("https://abc.supabase.co/rest/v1?x=1#f")},
 		{"both set, padded with spaces", "  https://abc.supabase.co  ", " " + key + " ",
-			"https://abc.supabase.co", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://abc.supabase.co")},
-		{"only URL set", "https://abc.supabase.co", "", "", "", "", wantReportOnlySelf, emptyConfigJSON},
-		{"only key set", "", key, "", "", "", wantReportOnlySelf, emptyConfigJSON},
-		{"http URL", "http://abc.supabase.co", key, "http://abc.supabase.co", key, "", wantReportOnlySelf, cfg("http://abc.supabase.co")},
-		{"garbage URL", "not a url", key, "not a url", key, "", wantReportOnlySelf, cfg("not a url")},
-		{"unparseable URL", "https://%zz", key, "https://%zz", key, "", wantReportOnlySelf, cfg("https://%zz")},
-		{"space in the host", "https://abc .supabase.co", key, "https://abc .supabase.co", key, "", wantReportOnlySelf, cfg("https://abc .supabase.co")},
+			"https://abc.supabase.co", key, "https://abc.supabase.co", wantTailSupa, cfg("https://abc.supabase.co")},
+		{"only URL set", "https://abc.supabase.co", "", "", "", "", wantTailSelf, emptyConfigJSON},
+		{"only key set", "", key, "", "", "", wantTailSelf, emptyConfigJSON},
+		{"http URL", "http://abc.supabase.co", key, "http://abc.supabase.co", key, "", wantTailSelf, cfg("http://abc.supabase.co")},
+		{"garbage URL", "not a url", key, "not a url", key, "", wantTailSelf, cfg("not a url")},
+		{"unparseable URL", "https://%zz", key, "https://%zz", key, "", wantTailSelf, cfg("https://%zz")},
+		{"space in the host", "https://abc .supabase.co", key, "https://abc .supabase.co", key, "", wantTailSelf, cfg("https://abc .supabase.co")},
 		{"port", "https://abc.supabase.co:8443/x", key, "https://abc.supabase.co:8443/x", key, "https://abc.supabase.co:8443",
-			"connect-src 'self' https://abc.supabase.co:8443; report-to csp; report-uri /csp-report", cfg("https://abc.supabase.co:8443/x")},
-		{"userinfo", "https://u:p@abc.supabase.co/", key, "https://u:p@abc.supabase.co/", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://u:p@abc.supabase.co/")},
-		{"';' injection", "https://abc.supabase.co;script-src", key, "https://abc.supabase.co;script-src", key, "", wantReportOnlySelf, cfg("https://abc.supabase.co;script-src")},
+			"; connect-src 'self' https://abc.supabase.co:8443; report-to csp; report-uri /csp-report", cfg("https://abc.supabase.co:8443/x")},
+		{"userinfo", "https://u:p@abc.supabase.co/", key, "https://u:p@abc.supabase.co/", key, "https://abc.supabase.co", wantTailSupa, cfg("https://u:p@abc.supabase.co/")},
+		{"';' injection", "https://abc.supabase.co;script-src", key, "https://abc.supabase.co;script-src", key, "", wantTailSelf, cfg("https://abc.supabase.co;script-src")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SUPABASE_URL", tc.url)
@@ -187,23 +185,17 @@ func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("GET /: status = %d, want 200", rec.Code)
 			}
-			ro := rec.Header().Values(reportOnlyHeader)
-			if len(ro) != 1 || ro[0] != tc.wantRO {
-				t.Errorf("GET /: %s = %q, want [%q]", reportOnlyHeader, ro, tc.wantRO)
+			csp := rec.Header().Values(enforcingHeader)
+			if len(csp) != 1 {
+				t.Errorf("GET /: %s = %q, want exactly one policy", enforcingHeader, csp)
+			} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1], tc.wantTail) {
+				t.Errorf("GET /: %s = %q, want the policy ending %q", enforcingHeader, csp[0], tc.wantTail)
 			}
-			for _, v := range ro {
-				for _, bad := range []string{"script-src", "style-src", "nonce"} {
-					if strings.Contains(v, bad) {
-						t.Errorf("GET /: %s = %q, must not contain %s", reportOnlyHeader, v, bad)
-					}
-				}
+			if ro := rec.Header().Values(reportOnlyHeader); len(ro) != 0 {
+				t.Errorf("GET /: %s = %q, want none", reportOnlyHeader, ro)
 			}
 			if got := rec.Header().Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 				t.Errorf("GET /: %s = %q, want %q", reportingEndpointsHeader, got, wantReportingEndpoints)
-			}
-			csp := rec.Header().Get(enforcingHeader)
-			if m := cspNonceRE.FindStringSubmatch(csp); m == nil || csp != wantPolicy(m[1]) {
-				t.Errorf("GET /: %s = %q, want the unchanged enforcing policy", enforcingHeader, csp)
 			}
 
 			rec = httptest.NewRecorder()

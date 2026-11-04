@@ -256,7 +256,7 @@ func newMux() *http.ServeMux {
 	// Outside the data endpoints and outside the Caddy forward_auth paths. The
 	// exact pattern wins over the "/" catch-all.
 	mux.HandleFunc("/version", handleVersion)
-	// The collector for the connect-src Report-Only policy (csp.go). Outside
+	// The collector for Content-Security-Policy violations (csp.go). Outside
 	// the data endpoints, like /version.
 	mux.HandleFunc("/csp-report", handleCSPReport)
 	return mux
@@ -346,13 +346,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// Never stored, so a deploy is visible on the next load and a cached
 		// copy cannot replay one nonce to every visitor.
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce))
-		// connect-src, report-only for now, on this response only. No
-		// script-src, style-src or nonce: those stay in the enforcing header
-		// above.
+		// One enforcing policy, connect-src included, on this response only;
+		// the origin comes from the same helper as /config.json.
 		_, _, supaOrigin := supabaseConfig()
+		w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce, supaOrigin))
 		w.Header().Set(reportingEndpointsName, reportingEndpointsValue)
-		w.Header().Set(cspReportOnlyHeaderName, cspReportOnly(supaOrigin))
 		_, _ = w.Write(data)
 	default:
 		http.NotFound(w, r)
