@@ -1,0 +1,11 @@
+{
+  "name": "bibliovera-browser-tests",
+  "private": true,
+  "description": "Browser tests: the real index.html served by the real Go server with its real CSP headers. Only the data routes are intercepted; no CLI call is made.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

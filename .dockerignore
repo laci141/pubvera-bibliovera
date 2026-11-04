@@ -11,3 +11,5 @@ data.db
 bin/server*
 # Build scratch.
 cli-src/
+tools/browser/node_modules/
+tools/browser/test-results/
