@@ -18,21 +18,20 @@ import (
 	"unicode/utf8"
 )
 
-// Content-Security-Policy, phase 2: every <script> tag in index.html
-// carries nonce="__CSP_NONCE__", and each index response replaces that marker
-// with a fresh nonce named in the policy header. The policy is enforced: a
-// script without the response's nonce is blocked.
+// Content-Security-Policy: every <script> tag in index.html carries
+// nonce="__CSP_NONCE__", and each index response replaces that marker with a
+// fresh nonce named in the policy header. The policy is enforced: a script
+// without the response's nonce is blocked.
 //
-// connect-src is not enforced yet. The index response also carries a
-// Content-Security-Policy-Report-Only header with connect-src alone ('self',
-// plus the Supabase origin when /config.json hands the page a Supabase
-// config), reported to POST /csp-report (handleCSPReport).
+// connect-src is enforced in the same header: 'self', plus the Supabase origin
+// when /config.json hands the page a Supabase config, so fetch, XHR, WebSocket
+// and beacon requests to any other host are refused. Violations are reported
+// to POST /csp-report (handleCSPReport). There is no Report-Only header.
 const (
 	nonceMarker   = "__CSP_NONCE__"
 	cspHeaderName = "Content-Security-Policy"
 
-	cspReportOnlyHeaderName = "Content-Security-Policy-Report-Only"
-	reportingEndpointsName  = "Reporting-Endpoints"
+	reportingEndpointsName = "Reporting-Endpoints"
 	// The endpoint URL is relative; the browser resolves it against the
 	// response URL.
 	reportingEndpointsValue = `csp="/csp-report"`
@@ -46,15 +45,15 @@ var nonceRandRead = rand.Read
 // https: are the backward-compatibility fallback for browsers that predate
 // nonces and 'strict-dynamic'; browsers that understand nonce plus
 // 'strict-dynamic' (Chrome 52+, Firefox 52+, Safari 15.4+) ignore both.
-func contentSecurityPolicy(nonce string) string {
-	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+// origin is the Supabase origin from supabaseConfig, or "".
+func contentSecurityPolicy(nonce, origin string) string {
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" + cspConnectSrc(origin)
 }
 
-// cspReportOnly is the connect-src Report-Only policy for one index response.
-// It carries connect-src alone: no script-src, style-src or nonce, because a
-// script-src copy here would report every blocked inline script a second time.
-func cspReportOnly(origin string) string {
-	src := "connect-src 'self'"
+// cspConnectSrc is the tail of the enforcing policy for one index response:
+// connect-src ('self', plus origin when non-empty) and the report directives.
+func cspConnectSrc(origin string) string {
+	src := "; connect-src 'self'"
 	if origin != "" {
 		src += " " + origin
 	}
@@ -63,7 +62,7 @@ func cspReportOnly(origin string) string {
 
 // supabaseConfig is the one place that decides whether the page has a Supabase
 // config. /config.json hands url and key to the page; the index response puts
-// origin into the connect-src Report-Only policy. Both call this per request,
+// origin into the enforced connect-src. Both call this per request,
 // so the page and the header cannot disagree, and an environment change needs
 // no restart.
 //
@@ -144,7 +143,7 @@ type cspViolation struct {
 	disposition, directive, blocked, document string
 }
 
-// handleCSPReport receives the Report-Only reports: report-to
+// handleCSPReport receives Content-Security-Policy violation reports: report-to
 // (application/reports+json, an array of reports) and report-uri
 // (application/csp-report, one object). It logs one line per violation with
 // the blocked origin and the page path only: no query, fragment, header,

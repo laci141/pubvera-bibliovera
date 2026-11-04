@@ -14,7 +14,9 @@
 // The enforcing policy (csp.go contentSecurityPolicy) is nonce-based
 // script-src with script-src-attr 'none', so an onclick= attribute does not
 // run: every control below works only through the delegated listeners. The
-// Report-Only policy (csp.go cspReportOnly) carries connect-src alone.
+// same header enforces connect-src ('self', plus the Supabase origin on server
+// B, csp.go cspConnectSrc) and names the report endpoints. There is no
+// Report-Only header.
 "use strict";
 const { test, expect } = require("@playwright/test");
 const { execFileSync, spawn } = require("child_process");
@@ -27,8 +29,10 @@ const tmp = path.join(os.tmpdir(), "bibliovera-browser-test");
 const bin = path.join(tmp, process.platform === "win32" ? "bibliovera.exe" : "bibliovera");
 
 const SUPA_ORIGIN = "https://example.supabase.co";
-const RO_A = "connect-src 'self'; report-to csp; report-uri /csp-report";
-const RO_B = "connect-src 'self' " + SUPA_ORIGIN + "; report-to csp; report-uri /csp-report";
+// The enforcing policy, written out so a change to any directive fails T5.
+const policy = (nonce, origin) => "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; connect-src 'self'" + (origin ? " " + origin : "") + "; report-to csp; report-uri /csp-report";
+const TAIL_A = "; connect-src 'self'; report-to csp; report-uri /csp-report";
+const TAIL_B = "; connect-src 'self' " + SUPA_ORIGIN + "; report-to csp; report-uri /csp-report";
 const VERSION = "9.9.9-browser-test";
 // The 6 cards on the start page, in page order (index.html data-modal=).
 const CARDS = ["aff", "auth", "drift", "read", "rise", "mesh"];
@@ -284,14 +288,18 @@ test("T4 each of the 6 cards opens its modal and the close control closes it", a
 });
 
 // T5
-for (const [name, origin, ro] of [["A", () => urlA, RO_A], ["B", () => urlB, RO_B]]) {
-  test("T5 headers on server " + name + ": enforcing script-src-attr 'none' without connect-src, Report-Only connect-src", async () => {
+// fetch joins repeated headers with ", ", so a second Content-Security-Policy
+// header breaks the exact match, and get() is null only when the header is
+// absent.
+for (const [name, origin, supa] of [["A", () => urlA, ""], ["B", () => urlB, SUPA_ORIGIN]]) {
+  test("T5 headers on server " + name + ": one enforcing policy with connect-src, no Report-Only header", async () => {
     const res = await fetch(origin() + "/");
     expect(res.status).toBe(200);
     const csp = res.headers.get("content-security-policy") || "";
-    expect(csp).toContain("; script-src-attr 'none';");
-    expect(csp).not.toContain("connect-src");
-    expect(res.headers.get("content-security-policy-report-only")).toBe(ro);
+    const nonce = (/^script-src 'nonce-([A-Za-z0-9+/]{22})' /.exec(csp) || [])[1];
+    expect(nonce).toBeDefined();
+    expect(csp).toBe(policy(nonce, supa));
+    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
     expect(res.headers.get("reporting-endpoints")).toBe('csp="/csp-report"');
   });
 }
@@ -308,30 +316,36 @@ test("T6 the unauthenticated page raises no connect-src violation", async ({ pag
 });
 
 // T7
-test("T7 a fetch outside connect-src raises exactly one (distinct) report-only connect-src violation", async ({ page }) => {
+test("T7 a fetch outside connect-src is refused, never leaves the page and raises one (distinct) enforced violation", async ({ page }) => {
   let blocked = 0;
   await page.route("https://blocked.invalid/**", r => {
     blocked++;
     return r.fulfill({ status: 200, headers: { "Access-Control-Allow-Origin": "*" }, body: "ok" });
   });
+  const requests = [];
+  page.on("request", r => { if (r.url().startsWith("https://blocked.invalid/")) requests.push(r.url()); });
   const log = await load(page);
+  expect(log.headers["content-security-policy"].endsWith(TAIL_A)).toBe(true);
   const result = await page.evaluate(() => fetch("https://blocked.invalid/x").then(r => "resolved " + r.status, e => "rejected " + e.name));
-  // Report-only: the request still goes out, and only the report is raised.
-  expect(result).toBe("resolved 200");
-  expect(blocked).toBe(1);
-  // Chromium (from @playwright/test 1.63.0) fires the event and prints the
-  // console line twice for this one report-only fetch, routed or not
-  // (measured). So the count is of distinct violations, and every event must
-  // be that one violation.
+  // Enforced: the browser refuses the fetch before any request is made.
+  expect(result).toBe("rejected TypeError");
+  // Chromium (from @playwright/test 1.63.0) fires the event twice for this
+  // one fetch (measured). So the count is of distinct violations, and every
+  // event must be that one violation.
   await expect.poll(async () => (await violations(page)).filter(v => v.directive.startsWith("connect-src")).length).toBeGreaterThan(0);
   const v = (await violations(page)).filter(v => v.directive.startsWith("connect-src"));
   const distinct = [...new Set(v.map(x => x.directive + " " + x.blocked + " " + x.disposition))];
-  expect(distinct).toEqual(["connect-src https://blocked.invalid/x report"]);
+  expect(distinct).toEqual(["connect-src https://blocked.invalid/x enforce"]);
   const lines = log.console.filter(m => CONNECT_RE.test(m));
   expect(lines.length).toBeGreaterThan(0);
+  // Two distinct lines (measured): the CSP message, and the Fetch API one
+  // that says "Refused to connect".
   expect([...new Set(lines)]).toEqual([
-    "info: Connecting to 'https://blocked.invalid/x' violates the following Content Security Policy directive: \"connect-src 'self'\". The policy is report-only, so the violation has been logged but no further action has been taken.",
+    "error: Connecting to 'https://blocked.invalid/x' violates the following Content Security Policy directive: \"connect-src 'self'\". The action has been blocked.",
+    "error: Fetch API cannot load https://blocked.invalid/x. Refused to connect because it violates the document's Content Security Policy.",
   ]);
+  expect(blocked).toBe(0);
+  expect(requests).toEqual([]);
   expect(log.pageErrors).toEqual([]);
 });
 
@@ -349,7 +363,7 @@ function fakeSession() {
   };
 }
 
-test("T8 signed in with Supabase, Sign out raises no connect-src violation and calls /auth/v1/logout", async ({ page }) => {
+test("T8 signed in with Supabase, Sign out under enforced connect-src reaches /auth/v1/logout with no violation", async ({ page }) => {
   const supa = [];
   await page.route(SUPA_ORIGIN + "/**", r => {
     supa.push(r.request().method() + " " + new URL(r.request().url()).pathname);
@@ -366,7 +380,9 @@ test("T8 signed in with Supabase, Sign out raises no connect-src violation and c
   expect(supa.filter(s => s === "POST /auth/v1/logout")).toHaveLength(1);
   expectNoConnectSrc(log, await violations(page));
   expectNoCSPViolations(log, await violations(page));
-  expect(log.headers["content-security-policy-report-only"]).toBe(RO_B);
+  // Last, so a missing origin shows up as the refused logout first.
+  expect(log.headers["content-security-policy"].endsWith(TAIL_B)).toBe(true);
+  expect(log.headers["content-security-policy-report-only"]).toBeUndefined();
 });
 
 // T9: the endpoint on the real server and mux, posted to directly.
