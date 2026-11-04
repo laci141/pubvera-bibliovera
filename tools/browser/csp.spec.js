@@ -15,11 +15,14 @@
 // script-src with script-src-attr 'none', so an onclick= attribute does not
 // run: every control below works only through the delegated listeners. The
 // same header enforces connect-src ('self', plus the Supabase origin on server
-// B, csp.go cspConnectSrc) and names the report endpoints. There is no
-// Report-Only header.
+// B, csp.go cspConnectSrc) and names the report endpoints. A second header,
+// Content-Security-Policy-Report-Only, carries the style policy alone (style
+// S1, csp.go styleReportOnlyPolicy): the <style> block's nonce and
+// style-src-attr 'none'. It blocks nothing; T10 and T11 measure its reports.
 "use strict";
 const { test, expect } = require("@playwright/test");
 const { execFileSync, spawn } = require("child_process");
+const fs = require("fs");
 const net = require("net");
 const os = require("os");
 const path = require("path");
@@ -31,6 +34,9 @@ const bin = path.join(tmp, process.platform === "win32" ? "bibliovera.exe" : "bi
 const SUPA_ORIGIN = "https://example.supabase.co";
 // The enforcing policy, written out so a change to any directive fails T5.
 const policy = (nonce, origin) => "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; connect-src 'self'" + (origin ? " " + origin : "") + "; report-to csp; report-uri /csp-report";
+// The style Report-Only policy, written out: style-src alone, no script-src
+// or connect-src, so the script and connect violation counts stay as they are.
+const styleRO = nonce => "style-src 'nonce-" + nonce + "'; style-src-attr 'none'; report-to csp; report-uri /csp-report";
 const TAIL_A = "; connect-src 'self'; report-to csp; report-uri /csp-report";
 const TAIL_B = "; connect-src 'self' " + SUPA_ORIGIN + "; report-to csp; report-uri /csp-report";
 const VERSION = "9.9.9-browser-test";
@@ -138,7 +144,7 @@ const DATA = {
   "/version": { version: VERSION },
 };
 
-async function load(page, { origin = urlA, realSupabaseJS = false } = {}) {
+async function load(page, { origin = urlA, realSupabaseJS = false, data: answers = DATA } = {}) {
   // xlsx-js-style (and supabase-js, outside the sign-out test) come from
   // jsdelivr; an empty body keeps the run fast. supabase-js is loaded for real
   // only where a test signs out through it: its SRI hash rules out a stub.
@@ -146,10 +152,10 @@ async function load(page, { origin = urlA, realSupabaseJS = false } = {}) {
     ? r.continue()
     : r.fulfill({ status: 200, contentType: "application/javascript", body: "" }));
   const data = [];
-  await page.route(u => u.origin === origin && Object.prototype.hasOwnProperty.call(DATA, u.pathname), r => {
+  await page.route(u => u.origin === origin && Object.prototype.hasOwnProperty.call(answers, u.pathname), r => {
     const p = new URL(r.request().url()).pathname;
     data.push(p);
-    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(DATA[p]) });
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answers[p]) });
   });
   // Recorded in the page from the first script on, so a violation raised
   // while the page loads is not missed.
@@ -292,14 +298,18 @@ test("T4 each of the 6 cards opens its modal and the close control closes it", a
 // header breaks the exact match, and get() is null only when the header is
 // absent.
 for (const [name, origin, supa] of [["A", () => urlA, ""], ["B", () => urlB, SUPA_ORIGIN]]) {
-  test("T5 headers on server " + name + ": one enforcing policy with connect-src, no Report-Only header", async () => {
+  test("T5 headers on server " + name + ": one enforcing policy with connect-src, one style Report-Only policy with the same nonce", async () => {
     const res = await fetch(origin() + "/");
     expect(res.status).toBe(200);
     const csp = res.headers.get("content-security-policy") || "";
     const nonce = (/^script-src 'nonce-([A-Za-z0-9+/]{22})' /.exec(csp) || [])[1];
     expect(nonce).toBeDefined();
     expect(csp).toBe(policy(nonce, supa));
-    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(res.headers.get("content-security-policy-report-only")).toBe(styleRO(nonce));
+    // 5 script tags and the 1 style tag, all with the header's nonce.
+    const body = await res.text();
+    expect([...body.matchAll(/nonce="([^"]*)"/g)].map(m => m[1])).toEqual(Array(6).fill(nonce));
+    expect(body).toContain('<style nonce="' + nonce + '">');
     expect(res.headers.get("reporting-endpoints")).toBe('csp="/csp-report"');
   });
 }
@@ -382,7 +392,9 @@ test("T8 signed in with Supabase, Sign out under enforced connect-src reaches /a
   expectNoCSPViolations(log, await violations(page));
   // Last, so a missing origin shows up as the refused logout first.
   expect(log.headers["content-security-policy"].endsWith(TAIL_B)).toBe(true);
-  expect(log.headers["content-security-policy-report-only"]).toBeUndefined();
+  // The Report-Only header is the style policy alone: no connect-src in it.
+  const nonce = (/'nonce-([^']+)'/.exec(log.headers["content-security-policy"]) || [])[1];
+  expect(log.headers["content-security-policy-report-only"]).toBe(styleRO(nonce));
 });
 
 // T9: the endpoint on the real server and mux, posted to directly.
@@ -408,4 +420,145 @@ test("T9 POST /csp-report on the real server answers 204 and logs one line witho
   const get = await fetch(urlA + "/csp-report");
   expect(get.status).toBe(405);
   expect(get.headers.get("allow")).toBe("POST");
+});
+
+// T10 and T11: the style Report-Only policy. The recorder in load() keeps
+// every securitypolicyviolation event; a report-only one has disposition
+// "report". Chromium (from @playwright/test 1.63.0) can fire one violation
+// twice, so the controls count distinct violations.
+const styleViolations = async page => (await violations(page)).filter(v => v.directive.startsWith("style-src"));
+const distinct = vs => [...new Set(vs.map(v => v.directive + " " + v.blocked + " " + v.disposition))];
+
+// Search answers that render a real result in each of the 6 modals. The
+// /mesh pairs form a hub with 19 co-authors, a triangle among co-authors 1-3
+// and a chain over co-authors 4-9: 20 authors, and index.html meshTiers puts
+// them in all four tiers (1: 1 author, 2: 7, 3: 2, 0: 10; computed with
+// meshTiers from index.html), so every tier colour is drawn.
+const MESH_PAIRS = [
+  ...Array.from({ length: 19 }, (_, i) => ({ author_a: "Hub Author", author_b: "Coauthor " + (i + 1), shared_works: 1 + (i % 4) })),
+  { author_a: "Coauthor 1", author_b: "Coauthor 2", shared_works: 2 },
+  { author_a: "Coauthor 1", author_b: "Coauthor 3", shared_works: 1 },
+  { author_a: "Coauthor 2", author_b: "Coauthor 3", shared_works: 1 },
+  ...Array.from({ length: 5 }, (_, i) => ({ author_a: "Coauthor " + (i + 4), author_b: "Coauthor " + (i + 5), shared_works: 1 })),
+];
+const PAPERS = [
+  { title: "Paper one", doi: "10.1016/S0140-6736(20)00001-1", cited_by_count: 120, publication_year: 2021, pub_date: "2021-03-01", citations_per_year: 40 },
+  { title: "Paper two", doi: "10.1016/S0140-6736(21)00002-2", cited_by_count: 60, publication_year: 2022, pub_date: "2022-05-01", citations_per_year: 30 },
+];
+const SEARCH_DATA = {
+  ...DATA,
+  "/authors": [
+    { author_name: "Author One", author_id: "A1", works: 5, total_citations: 300, avg_citations: 60 },
+    { author_name: "Author Two", author_id: "A2", works: 3, total_citations: 90, avg_citations: 30 },
+  ],
+  "/drift": [{ topic: "Rising topic", delta_share: 0.02 }, { topic: "Fading topic", delta_share: -0.01 }],
+  "/curate": PAPERS,
+  "/mesh": MESH_PAIRS,
+};
+
+test("T10 the real page raises no style-src and no style-src-attr report (load, 6 modals, 6 searches, mesh legend, tier colours); the PNG export raises only report-only style-src-attr on its clone", async ({ page }) => {
+  const log = await load(page, { data: SEARCH_DATA });
+  const nonce = (/'nonce-([^']+)'/.exec(log.headers["content-security-policy"]) || [])[1];
+  expect(log.headers["content-security-policy-report-only"]).toBe(styleRO(nonce));
+
+  const run = async (k, fill, done) => {
+    await page.locator(".card[data-modal='" + k + "']").click();
+    const modal = page.locator("#" + k + "Modal");
+    await expect(modal).toHaveClass(/\bactive\b/);
+    if (fill) await page.locator(fill[0]).fill(fill[1]);
+    await modal.locator("button[data-action='run-" + k + "']").click();
+    await done();
+  };
+  const close = k => page.locator("#" + k + "Modal .x[data-action='close-modal']").click();
+  await run("aff", null, () => expect(page.locator("#aff_res tbody tr")).toHaveCount(1));
+  await close("aff");
+  await run("auth", null, () => expect(page.locator("#auth_res tbody tr")).toHaveCount(2));
+  await close("auth");
+  await run("drift", null, () => expect(page.locator("#drift_res .drift-row")).toHaveCount(2));
+  await close("drift");
+  await run("read", ["#read_topic", "immunotherapy"], () => expect(page.locator("#read_res tbody tr")).toHaveCount(2));
+  await close("read");
+  await run("rise", ["#rise_topic", "immunotherapy"], () => expect(page.locator("#rise_res tbody tr")).toHaveCount(2));
+  await close("rise");
+  await expect.poll(() => log.data.filter(p => p === "/check").length).toBeGreaterThan(0);
+
+  await run("mesh", ["#mesh_org", "Oxford"], () => expect(page.locator("#graphWrap svg circle")).toHaveCount(20));
+  // The legend: 4 tiers in page order [1, 2, 3, 0], each swatch in its tier
+  // colour from the nonced stylesheet (.tier-N, MESH_TIER_COLORS).
+  const swatches = await page.locator("#mesh_res .glegend i").evaluateAll(els => els.map(e => getComputedStyle(e).backgroundColor));
+  expect(swatches).toEqual(["rgb(240, 228, 66)", "rgb(230, 159, 0)", "rgb(86, 180, 233)", "rgb(90, 103, 130)"]);
+  // The dots carry the same four colours (a fill attribute, not a style).
+  const fills = await page.locator("#graphWrap svg circle").evaluateAll(els => [...new Set(els.map(e => e.getAttribute("fill")))].sort());
+  expect(fills).toEqual(["#56B4E9", "#5A6782", "#E69F00", "#F0E442"]);
+  // Pin the hub (the largest dot): the co-author list draws tier swatches too.
+  // The pointer has to reach it first: hover sets the pick candidate.
+  await page.locator("#graphWrap").scrollIntoViewIfNeeded();
+  const hub = await page.locator("#graphWrap svg circle").evaluateAll(els => {
+    const e = els.reduce((a, b) => (Number(b.getAttribute("r")) > Number(a.getAttribute("r")) ? b : a));
+    const r = e.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.move(hub.x - 2, hub.y);
+  await page.mouse.move(hub.x, hub.y);
+  await page.mouse.click(hub.x, hub.y);
+  await expect(page.locator("#gNeigh li")).toHaveCount(19);
+  expect(await page.locator("#gNeigh li i").first().evaluate(e => getComputedStyle(e).backgroundColor)).toMatch(/^rgb\(/);
+  expect(await styleViolations(page), "style violations before the PNG export").toEqual([]);
+  expectNoCSPViolations(log, await violations(page));
+
+  // The real PNG export click. meshPNG copies computed styles onto a detached
+  // clone of the svg with setAttribute("style", ...) (index.html, the one
+  // setAttribute("style" line; S1 leaves it as it is). Measured with Chromium
+  // from @playwright/test 1.63.0: it DOES raise style-src-attr on the clone,
+  // report-only, exactly one event per element under the svg (71 of 71, three
+  // runs out of three), all on that line; cloning the svg raises none. Nothing
+  // is blocked: the PNG is still written. S2 has to deal with this line before
+  // the policy is enforced.
+  const setAttrLine = fs.readFileSync(path.join(repo, "index.html"), "utf8").split(/\r?\n/)
+    .findIndex(l => l.includes('to[i].setAttribute("style"')) + 1;
+  expect(setAttrLine).toBeGreaterThan(0);
+  const svgElements = await page.evaluate(() => document.querySelectorAll("#graphWrap svg *").length);
+  expect(svgElements).toBeGreaterThan(0);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#mesh_res button[data-action='mesh-png']").click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("bibliovera-collaboration-Hub_Author.png");
+  expect(fs.readFileSync(await download.path()).subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  await expect.poll(async () => (await styleViolations(page)).length).toBe(svgElements);
+  // Let a late duplicate arrive before the exact count below.
+  await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
+  const after = await styleViolations(page);
+  expect(distinct(after)).toEqual(["style-src-attr inline report"]);
+  expect([...new Set(after.map(v => v.line))]).toEqual([setAttrLine]);
+  expect(after).toHaveLength(svgElements);
+  // No other violation, no page error, and the only CSP console lines are the
+  // report-only style-src-attr ones.
+  expect((await violations(page)).filter(v => !v.directive.startsWith("style-src"))).toEqual([]);
+  expect(log.pageErrors).toEqual([]);
+  const cspLines = [...new Set(log.console.filter(m => CSP_RE.test(m)).map(m => m.replace(/'sha256-[^']+'/, "'sha256-HASH'")))];
+  expect(cspLines).toEqual(["info: Applying inline style violates the following Content Security Policy directive 'style-src-attr 'none''. Either the 'unsafe-inline' keyword, a hash ('sha256-HASH'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The policy is report-only, so the violation has been logged but no further action has been taken."]);
+});
+
+test("T11 control: an un-nonced <style> raises one style-src report, a style attribute one style-src-attr report, and neither is blocked", async ({ page }) => {
+  const log = await load(page);
+  expect(await styleViolations(page)).toEqual([]);
+
+  await page.evaluate(() => {
+    const s = document.createElement("style");
+    s.textContent = "#app-version{outline:3px solid rgb(1, 2, 3)}";
+    document.head.appendChild(s);
+  });
+  await expect.poll(async () => (await styleViolations(page)).length).toBeGreaterThan(0);
+  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline report"]);
+  // Report-Only: the style still applies.
+  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).outlineColor)).toBe("rgb(1, 2, 3)");
+
+  await page.evaluate(() => document.getElementById("app-version").setAttribute("style", "color: rgb(4, 5, 6)"));
+  await expect.poll(async () => (await styleViolations(page)).filter(v => v.directive === "style-src-attr").length).toBeGreaterThan(0);
+  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline report", "style-src-attr inline report"]);
+  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).color)).toBe("rgb(4, 5, 6)");
+  // Nothing else: no script or connect violation, no page error.
+  expect((await violations(page)).filter(v => !v.directive.startsWith("style-src"))).toEqual([]);
+  expect(log.pageErrors).toEqual([]);
 });

@@ -26,10 +26,16 @@ import (
 // connect-src is enforced in the same header: 'self', plus the Supabase origin
 // when /config.json hands the page a Supabase config, so fetch, XHR, WebSocket
 // and beacon requests to any other host are refused. Violations are reported
-// to POST /csp-report (handleCSPReport). There is no Report-Only header.
+// to POST /csp-report (handleCSPReport).
+//
+// Style S1: the one <style> block carries the same marker, and the style
+// policy (styleReportOnlyPolicy) is sent in a separate Report-Only header with
+// the same nonce. It blocks nothing; violations are only reported.
 const (
 	nonceMarker   = "__CSP_NONCE__"
 	cspHeaderName = "Content-Security-Policy"
+	// The style policy only, report-only until it is enforced (style S2).
+	cspReportOnlyHeaderName = "Content-Security-Policy-Report-Only"
 
 	reportingEndpointsName = "Reporting-Endpoints"
 	// The endpoint URL is relative; the browser resolves it against the
@@ -48,6 +54,14 @@ var nonceRandRead = rand.Read
 // origin is the Supabase origin from supabaseConfig, or "".
 func contentSecurityPolicy(nonce, origin string) string {
 	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" + cspConnectSrc(origin)
+}
+
+// styleReportOnlyPolicy is the Report-Only policy for the index page: style-src
+// alone, so the script and connect-src violations are not reported twice.
+// The <style> block carries nonce; a style="" attribute or a <style> without
+// it is reported, not blocked.
+func styleReportOnlyPolicy(nonce string) string {
+	return "style-src 'nonce-" + nonce + "'; style-src-attr 'none'; report-to csp; report-uri /csp-report"
 }
 
 // cspConnectSrc is the tail of the enforcing policy for one index response:

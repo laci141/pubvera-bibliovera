@@ -8,7 +8,8 @@
 //   G1 no on*= attribute inside an HTML tag (script bodies stripped first);
 //   G2 no on*=" built inside a JS string literal in any inline script;
 //   G3 every <script tag carries nonce="__CSP_NONCE__" (index.html has 5:
-//      the d3 and xlsx-js-style bundles, two classic inline scripts and one module).
+//      the d3 and xlsx-js-style bundles, two classic inline scripts and one module);
+//   G4 the one <style> tag carries it too (style S1), so the marker appears 6 times.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -16,6 +17,7 @@ const path = require("path");
 const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8").replace(/\r\n/g, "\n");
 
 const WANT_SCRIPT_TAGS = 5;
+const WANT_STYLE_TAGS = 1;
 
 let ran = 0;
 let failed = 0;
@@ -46,6 +48,15 @@ const opens = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
 const missing = opens.filter((t) => !/\snonce="__CSP_NONCE__"/.test(t));
 check("G3 every <script tag has nonce=\"__CSP_NONCE__\" (" + (opens.length - missing.length) + "/" + opens.length + " tags, want " + WANT_SCRIPT_TAGS + "/" + WANT_SCRIPT_TAGS + ")", opens.length === WANT_SCRIPT_TAGS && missing.length === 0);
 for (const t of missing) console.log("      missing: " + t.slice(0, 80));
+
+// G4: the one <style> tag carries the marker, and the marker appears once per
+// script and style tag, nowhere else.
+const styleOpens = [...html.matchAll(/<style\b[^>]*>/gi)].map((m) => m[0]);
+check("G4 every <style tag has nonce=\"__CSP_NONCE__\" (found " + styleOpens.length + " tags: " + styleOpens.join(" ") + ", want " + WANT_STYLE_TAGS + ")",
+  styleOpens.length === WANT_STYLE_TAGS && styleOpens.every((t) => /\snonce="__CSP_NONCE__"/.test(t)));
+const markers = html.split("__CSP_NONCE__").length - 1;
+check("G4 __CSP_NONCE__ appears " + markers + " times, want " + (WANT_SCRIPT_TAGS + WANT_STYLE_TAGS) + " (5 script, 1 style)",
+  markers === WANT_SCRIPT_TAGS + WANT_STYLE_TAGS);
 
 if (ran === 0) {
   console.error("FAIL: zero checks ran - refusing to pass silently");
