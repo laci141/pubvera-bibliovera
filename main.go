@@ -350,6 +350,8 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// the origin comes from the same helper as /config.json.
 		_, _, supaOrigin := supabaseConfig()
 		w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce, supaOrigin))
+		// The style policy, same nonce, report-only (style S1).
+		w.Header().Set(cspReportOnlyHeaderName, styleReportOnlyPolicy(nonce))
 		w.Header().Set(reportingEndpointsName, reportingEndpointsValue)
 		_, _ = w.Write(data)
 	default:

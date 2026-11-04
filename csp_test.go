@@ -11,11 +11,13 @@ import (
 	"testing"
 )
 
-// CSP: every <script> tag in index.html carries nonce="__CSP_NONCE__", and
-// each index response replaces that marker with a fresh nonce named in the
-// enforced Content-Security-Policy header, which also enforces connect-src.
-// There is no Report-Only header. All requests go through handleRoot
-// in-process (httptest), like root_cache_test.go.
+// CSP: every <script> tag and the one <style> tag in index.html carry
+// nonce="__CSP_NONCE__", and each index response replaces that marker with a
+// fresh nonce named in the enforced Content-Security-Policy header, which also
+// enforces connect-src. The style policy (style S1) rides in a separate
+// Content-Security-Policy-Report-Only header with the same nonce and blocks
+// nothing. All requests go through handleRoot in-process (httptest), like
+// root_cache_test.go.
 
 // wantPolicy is written out here rather than taken from contentSecurityPolicy,
 // so a change to any directive in csp.go fails a test. tail is the connect-src
@@ -32,9 +34,43 @@ const (
 	nonceMarkerText  = "__CSP_NONCE__"
 )
 
+// wantStyleReportOnly is the whole Report-Only header, written out: style-src
+// alone (no script-src, connect-src or other directive, so the script
+// violation counts stay as they are) plus the report directives.
+func wantStyleReportOnly(nonce string) string {
+	return "style-src 'nonce-" + nonce + "'; style-src-attr 'none'; report-to csp; report-uri /csp-report"
+}
+
 // index.html has 5 <script> tags: the external d3 and xlsx-js-style bundles,
-// two classic inline scripts and one module.
-const wantScriptTags = 5
+// two classic inline scripts and one module, and 1 <style> tag. Each carries
+// the nonce, so a response has 6 nonce attributes.
+const (
+	wantScriptTags = 5
+	wantStyleTags  = 1
+	wantNonceAttrs = wantScriptTags + wantStyleTags
+)
+
+var styleOpenRE = regexp.MustCompile(`<style\b[^>]*>`)
+
+// wantOneStyleReportOnly checks that h carries exactly one Report-Only header,
+// equal to the style policy with the nonce of the one enforcing header.
+func wantOneStyleReportOnly(t *testing.T, path string, h http.Header) {
+	t.Helper()
+	csp := h.Values(enforcingHeader)
+	ro := h.Values(reportOnlyHeader)
+	if len(csp) != 1 {
+		t.Errorf("GET %s: %s = %q, want exactly one policy to take the nonce from", path, enforcingHeader, csp)
+		return
+	}
+	m := cspNonceRE.FindStringSubmatch(csp[0])
+	if m == nil {
+		t.Errorf("GET %s: %s = %q has no nonce", path, enforcingHeader, csp[0])
+		return
+	}
+	if len(ro) != 1 || ro[0] != wantStyleReportOnly(m[1]) {
+		t.Errorf("GET %s: %s = %q, want [%q]", path, reportOnlyHeader, ro, wantStyleReportOnly(m[1]))
+	}
+}
 
 // 16 random bytes in raw standard base64 are exactly 22 characters.
 var cspNonceRE = regexp.MustCompile(`^script-src 'nonce-([A-Za-z0-9+/]{22})' `)
@@ -66,8 +102,8 @@ func TestCSPMarkerReplacedInResponse(t *testing.T) {
 		if strings.Contains(body, nonceMarkerText) {
 			t.Errorf("GET %s: body still contains %s", path, nonceMarkerText)
 		}
-		if n := strings.Count(body, `nonce="`+nonce+`"`); n != wantScriptTags {
-			t.Errorf("GET %s: %d tags carry the header nonce, want %d", path, n, wantScriptTags)
+		if n := strings.Count(body, `nonce="`+nonce+`"`); n != wantNonceAttrs {
+			t.Errorf("GET %s: %d tags carry the header nonce, want %d (5 script, 1 style)", path, n, wantNonceAttrs)
 		}
 	}
 }
@@ -91,7 +127,20 @@ func TestCSPHeaderNonceMatchesEveryBodyNonce(t *testing.T) {
 			t.Errorf("GET /: tag %s does not carry the header nonce %q", tag, nonce)
 		}
 	}
-	for _, m := range bodyNonceRE.FindAllStringSubmatch(body, -1) {
+	styles := styleOpenRE.FindAllString(body, -1)
+	if len(styles) != wantStyleTags {
+		t.Errorf("GET /: %d <style> tags, want %d", len(styles), wantStyleTags)
+	}
+	for _, tag := range styles {
+		if !strings.Contains(tag, ` nonce="`+nonce+`"`) {
+			t.Errorf("GET /: tag %s does not carry the header nonce %q", tag, nonce)
+		}
+	}
+	all := bodyNonceRE.FindAllStringSubmatch(body, -1)
+	if len(all) != wantNonceAttrs {
+		t.Errorf("GET /: %d nonce attributes in the body, want %d (5 script, 1 style)", len(all), wantNonceAttrs)
+	}
+	for _, m := range all {
 		if m[1] != nonce {
 			t.Errorf("GET /: body nonce %q differs from header nonce %q", m[1], nonce)
 		}
@@ -110,10 +159,11 @@ func TestCSPHeaderIsEnforcedWithExactPolicy(t *testing.T) {
 	}
 }
 
-// TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly does not use indexNonce, so
-// a missing enforcing header does not hide the Report-Only check. connect-src
-// lives in the one enforcing header; a Report-Only header must not come back.
-func TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly(t *testing.T) {
+// TestCSPIndexHasOneEnforcingPolicyAndOneStyleReportOnly does not use
+// indexNonce, so a missing enforcing header does not hide the Report-Only
+// check. connect-src lives in the one enforcing header; the one Report-Only
+// header carries the style policy alone, with the enforcing header's nonce.
+func TestCSPIndexHasOneEnforcingPolicyAndOneStyleReportOnly(t *testing.T) {
 	t.Setenv("SUPABASE_URL", "")
 	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
 	for _, path := range []string{"/", "/index.html"} {
@@ -124,9 +174,7 @@ func TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly(t *testing.T) {
 		} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1], wantTailSelf) {
 			t.Errorf("GET %s: %s = %q, want the policy ending %q", path, enforcingHeader, csp[0], wantTailSelf)
 		}
-		if ro := rec.Header().Values(reportOnlyHeader); len(ro) != 0 {
-			t.Errorf("GET %s: %s = %q, want none", path, reportOnlyHeader, ro)
-		}
+		wantOneStyleReportOnly(t, path, rec.Header())
 		if got := rec.Header().Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 			t.Errorf("GET %s: %s = %q, want %q", path, reportingEndpointsHeader, got, wantReportingEndpoints)
 		}
@@ -143,7 +191,8 @@ const (
 
 // Enforced connect-src. supabaseConfig feeds both /config.json and the header,
 // so each case pins the helper, the one exact enforcing policy with its
-// connect-src part, the absent Report-Only header and the /config.json body
+// connect-src part, the one style Report-Only header (never a connect-src in
+// it) and the /config.json body
 // byte for byte. The /config.json bodies are the output of the code before
 // supabaseConfig existed (they pass on that code).
 func TestCSPEnforcedConnectSrcTable(t *testing.T) {
@@ -191,9 +240,7 @@ func TestCSPEnforcedConnectSrcTable(t *testing.T) {
 			} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1], tc.wantTail) {
 				t.Errorf("GET /: %s = %q, want the policy ending %q", enforcingHeader, csp[0], tc.wantTail)
 			}
-			if ro := rec.Header().Values(reportOnlyHeader); len(ro) != 0 {
-				t.Errorf("GET /: %s = %q, want none", reportOnlyHeader, ro)
-			}
+			wantOneStyleReportOnly(t, "/", rec.Header())
 			if got := rec.Header().Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 				t.Errorf("GET /: %s = %q, want %q", reportingEndpointsHeader, got, wantReportingEndpoints)
 			}
@@ -226,10 +273,17 @@ func TestCSPIndexFileMarksEveryScript(t *testing.T) {
 	if len(tags) != wantScriptTags {
 		t.Errorf("index.html: %d <script> tags, want %d", len(tags), wantScriptTags)
 	}
-	for _, tag := range tags {
+	styles := styleOpenRE.FindAll(data, -1)
+	if len(styles) != wantStyleTags {
+		t.Errorf("index.html: %d <style> tags, want %d", len(styles), wantStyleTags)
+	}
+	for _, tag := range append(tags, styles...) {
 		if !strings.Contains(string(tag), ` nonce="`+nonceMarkerText+`"`) {
 			t.Errorf("index.html: tag %s has no nonce marker", tag)
 		}
+	}
+	if n := strings.Count(string(data), nonceMarkerText); n != wantNonceAttrs {
+		t.Errorf("index.html: %s appears %d times, want %d (5 script, 1 style)", nonceMarkerText, n, wantNonceAttrs)
 	}
 }
 
@@ -280,9 +334,12 @@ func TestCSPUnreadableIndexIs500WithoutPolicy(t *testing.T) {
 	}
 }
 
+// Through the whole mux, so /healthz (its own handler) is covered too: the
+// policies, the style Report-Only one included, are on the index page only.
 func TestCSPOnlyOnTheIndexPage(t *testing.T) {
-	for _, path := range []string{"/nope", "/config.json"} {
-		rec := getRoot(t, path)
+	for _, path := range []string{"/nope", "/config.json", "/healthz"} {
+		rec := httptest.NewRecorder()
+		newMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		for _, name := range []string{reportOnlyHeader, enforcingHeader, reportingEndpointsHeader} {
 			if got := rec.Header().Get(name); got != "" {
 				t.Errorf("GET %s: %s = %q, want none", path, name, got)
