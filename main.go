@@ -256,6 +256,9 @@ func newMux() *http.ServeMux {
 	// Outside the data endpoints and outside the Caddy forward_auth paths. The
 	// exact pattern wins over the "/" catch-all.
 	mux.HandleFunc("/version", handleVersion)
+	// The collector for the connect-src Report-Only policy (csp.go). Outside
+	// the data endpoints, like /version.
+	mux.HandleFunc("/csp-report", handleCSPReport)
 	return mux
 }
 
@@ -312,12 +315,9 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// A missing variable is not an error. An empty pair with status 200 is
 		// a valid answer that puts the page into unauthenticated mode, which is
 		// what keeps local development and the current deployment working until
-		// the environment is set.
-		supaURL := strings.TrimSpace(os.Getenv("SUPABASE_URL"))
-		supaKey := strings.TrimSpace(os.Getenv("SUPABASE_PUBLISHABLE_KEY"))
-		if supaURL == "" || supaKey == "" {
-			supaURL, supaKey = "", ""
-		}
+		// the environment is set. supabaseConfig (csp.go) is also what the
+		// index response uses for connect-src, so the page and the header agree.
+		supaURL, supaKey, _ := supabaseConfig()
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		// Never cache: a stale key surviving a key rotation would be hard to
 		// diagnose from the browser side.
@@ -347,6 +347,12 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// copy cannot replay one nonce to every visitor.
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce))
+		// connect-src, report-only for now, on this response only. No
+		// script-src, style-src or nonce: those stay in the enforcing header
+		// above.
+		_, _, supaOrigin := supabaseConfig()
+		w.Header().Set(reportingEndpointsName, reportingEndpointsValue)
+		w.Header().Set(cspReportOnlyHeaderName, cspReportOnly(supaOrigin))
 		_, _ = w.Write(data)
 	default:
 		http.NotFound(w, r)
