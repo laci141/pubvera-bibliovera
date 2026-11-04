@@ -63,6 +63,8 @@ function makeEl() {
     }
     return null;
   };
+  // applyDataSizes (runAff, runDrift) walks the bars; the shim tracks none.
+  el.querySelectorAll = () => [];
   return el;
 }
 const els = {};

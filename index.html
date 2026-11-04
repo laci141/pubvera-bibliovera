@@ -417,6 +417,22 @@
     .mesh-groups summary,.mesh-groups .mg-btn{min-height:44px;min-width:44px}
     .mesh-groups summary{display:flex;align-items:center}
   }
+  /* CSP style phase S0: style-src-attr 'none' blocks every style attribute, also
+     in HTML built by script, so the former inline styles are classes here.
+     Each rule repeats its class (.x.x, specificity 0,2,0) so it wins where the
+     inline style won. Script that sets el.style.x keeps working (applyDataSizes). */
+  .tone-aff.tone-aff{--c:#00d4ff}
+  .tone-auth.tone-auth{--c:#7c3aed}
+  .tone-drift.tone-drift{--c:#22c55e}
+  .tone-read.tone-read{--c:#38bdf8}
+  .tone-rise.tone-rise{--c:#f59e0b}
+  .tone-mesh.tone-mesh{--c:#ec4899}
+  .u-ta-right.u-ta-right{text-align:right}
+  .doi-link.doi-link{font-size:.78em;opacity:.7}
+  .tier-0.tier-0{background:#5A6782}
+  .tier-1.tier-1{background:#F0E442}
+  .tier-2.tier-2{background:#E69F00}
+  .tier-3.tier-3{background:#56B4E9}
 </style>
 </head>
 <body>
@@ -459,34 +475,34 @@
 </section>
 
 <section class="bento">
-  <button type="button" class="card" style="--c:#00d4ff" data-action="open-modal" data-modal="aff">
+  <button type="button" class="card tone-aff" data-action="open-modal" data-modal="aff">
     <span class="ic">👥</span>
     <span class="tx"><span class="lb">Affiliations</span><span class="sub">Institution growth</span></span>
   </button>
-  <button type="button" class="card" style="--c:#7c3aed" data-action="open-modal" data-modal="auth">
+  <button type="button" class="card tone-auth" data-action="open-modal" data-modal="auth">
     <span class="ic">✍️</span>
     <span class="tx"><span class="lb">Authors</span><span class="sub">Ranked by citations</span></span>
   </button>
-  <button type="button" class="card" style="--c:#22c55e" data-action="open-modal" data-modal="drift">
+  <button type="button" class="card tone-drift" data-action="open-modal" data-modal="drift">
     <span class="ic">📈</span>
     <span class="tx"><span class="lb">Topic Trends</span><span class="sub">Rising &amp; fading themes</span></span>
   </button>
-  <button type="button" class="card" style="--c:#38bdf8" data-action="open-modal" data-modal="read">
+  <button type="button" class="card tone-read" data-action="open-modal" data-modal="read">
     <span class="ic">📚</span>
     <span class="tx"><span class="lb">Reading List</span><span class="sub">Ranked + retraction-checked</span></span>
   </button>
-  <button type="button" class="card" style="--c:#f59e0b" data-action="open-modal" data-modal="rise">
+  <button type="button" class="card tone-rise" data-action="open-modal" data-modal="rise">
     <span class="ic">🚀</span>
     <span class="tx"><span class="lb">Rising Papers</span><span class="sub">Fastest-cited fresh work</span></span>
   </button>
-  <button type="button" class="card" style="--c:#ec4899" data-action="open-modal" data-modal="mesh">
+  <button type="button" class="card tone-mesh" data-action="open-modal" data-modal="mesh">
     <span class="ic">🕸️</span>
     <span class="tx"><span class="lb">Collaboration</span><span class="sub">Co-authorship network</span></span>
   </button>
 </section>
 
 <!-- Affiliations modal -->
-<div class="modal" id="affModal"><div class="mc" style="--c:#00d4ff" role="dialog" aria-modal="true" aria-labelledby="affModalTitle" tabindex="-1">
+<div class="modal" id="affModal"><div class="mc tone-aff" role="dialog" aria-modal="true" aria-labelledby="affModalTitle" tabindex="-1">
   <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="aff">&times;</button></div>
   <label>Journal</label>
   <select id="aff_journal">
@@ -514,7 +530,7 @@
 </div></div>
 
 <!-- Authors modal -->
-<div class="modal" id="authModal"><div class="mc" style="--c:#7c3aed" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
+<div class="modal" id="authModal"><div class="mc tone-auth" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
   <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="auth">&times;</button></div>
   <label>Institution (substring, optional)</label>
   <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
@@ -535,7 +551,7 @@
 </div></div>
 
 <!-- Topic Trends (drift) modal -->
-<div class="modal" id="driftModal"><div class="mc" style="--c:#22c55e" role="dialog" aria-modal="true" aria-labelledby="driftModalTitle" tabindex="-1">
+<div class="modal" id="driftModal"><div class="mc tone-drift" role="dialog" aria-modal="true" aria-labelledby="driftModalTitle" tabindex="-1">
   <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="drift">&times;</button></div>
   <label>Journal</label>
   <select id="drift_journal">
@@ -564,7 +580,7 @@
 </div></div>
 
 <!-- Reading List (curate + retraction) modal -->
-<div class="modal" id="readModal"><div class="mc" style="--c:#38bdf8" role="dialog" aria-modal="true" aria-labelledby="readModalTitle" tabindex="-1">
+<div class="modal" id="readModal"><div class="mc tone-read" role="dialog" aria-modal="true" aria-labelledby="readModalTitle" tabindex="-1">
   <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="read">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
@@ -605,7 +621,7 @@
 </div></div>
 
 <!-- Rising Papers modal -->
-<div class="modal" id="riseModal"><div class="mc" style="--c:#f59e0b" role="dialog" aria-modal="true" aria-labelledby="riseModalTitle" tabindex="-1">
+<div class="modal" id="riseModal"><div class="mc tone-rise" role="dialog" aria-modal="true" aria-labelledby="riseModalTitle" tabindex="-1">
   <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="rise">&times;</button></div>
   <label>Topic / keyword</label>
   <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
@@ -651,7 +667,7 @@
 </div></div>
 
 <!-- Collaboration (mesh) modal -->
-<div class="modal" id="meshModal"><div class="mc" style="--c:#ec4899" role="dialog" aria-modal="true" aria-labelledby="meshModalTitle" tabindex="-1">
+<div class="modal" id="meshModal"><div class="mc tone-mesh" role="dialog" aria-modal="true" aria-labelledby="meshModalTitle" tabindex="-1">
   <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="mesh">&times;</button></div>
   <label>Institution</label>
   <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
@@ -1415,6 +1431,7 @@ async function runAff(){
     queryFilters.aff=[j||"all journals",p.get("years")+"y window","min "+p.get("threshold")+" recent",
       "low base <"+p.get("minPrior"),"limit "+p.get("limit")];
     res.innerHTML=affTable(data,j,p);
+    applyDataSizes(res);
     updateQcount(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
@@ -1424,6 +1441,14 @@ async function runAff(){
 // already states "showing N of M rows", and years/threshold/minPrior are the
 // three that decide which institutions reach the table at all. Without them two
 // exports taken at different window sizes are indistinguishable.
+// Data-driven sizes (the institution bar's scale, the drift bar's width) are
+// set through the CSSOM once the markup exists: a style attribute in an HTML
+// string is blocked by style-src-attr, el.style.x is not. The number travels
+// in a data- attribute written by affTable / driftChart.
+function applyDataSizes(root){
+  root.querySelectorAll(".bar-chart[data-scale]").forEach(el=>{el.style.transform="scaleX("+el.dataset.scale+")";});
+  root.querySelectorAll(".drift-fill[data-w]").forEach(el=>{el.style.width=el.dataset.w+"%";});
+}
 function affTable(rows,journal,params){
   if(!Array.isArray(rows)||!rows.length) return '<p class="meta">No institutions matched.</p>';
   const maxRecent=Math.max(1,...rows.map(r=>Number(r.recent_count)||0));
@@ -1436,7 +1461,7 @@ function affTable(rows,journal,params){
   let h=metaRow(rows.length+' institutions'+(journal?' · '+esc(journal):' · all journals')+
     (scope.length?' · '+esc(scope.join(' · ')):''),
     'aff','bibliovera-affiliations.json');
-  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Institutions results"><table><thead><tr><th>#</th><th>Institution</th><th style="text-align:right">Recent</th><th style="text-align:right">Prior</th><th>Growth</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Institutions results"><table><thead><tr><th>#</th><th>Institution</th><th class="u-ta-right">Recent</th><th class="u-ta-right">Prior</th><th>Growth</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{
     const recent=Number(r.recent_count)||0, prior=Number(r.prior_count)||0;
     let growth;
@@ -1459,7 +1484,7 @@ function affTable(rows,journal,params){
     }
     const barPct=Math.max(4,Math.round(recent/maxRecent*100));
     const bar='<div class="bar-container"><span class="bar-number">'+num(recent)+'</span>'+
-      '<div class="bar-chart" style="transform:scaleX('+(barPct/100)+')"></div></div>';
+      '<div class="bar-chart" data-scale="'+(barPct/100)+'"></div></div>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+esc(r.institution)+'</td><td class="n">'+bar+'</td>'+
       '<td class="n">'+num(prior)+'</td><td>'+growth+'</td></tr>';
   });
@@ -1512,7 +1537,7 @@ function authTable(rows,inst,params){
   let h=metaRow(rows.length+' authors'+(inst?' · '+esc(inst):'')+
     (scope.length?' · '+esc(scope.join(' · ')):''),
     'auth','bibliovera-authors.json');
-  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Authors results"><table><thead><tr><th>#</th><th>Author</th><th style="text-align:right">Works</th><th style="text-align:right">Citations</th><th style="text-align:right">Avg</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Authors results"><table><thead><tr><th>#</th><th>Author</th><th class="u-ta-right">Works</th><th class="u-ta-right">Citations</th><th class="u-ta-right">Avg</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+authorLink(r)+'</td>'+
     '<td class="n">'+num(r.works)+'</td><td class="n">'+num(r.total_citations)+'</td>'+
     '<td class="n">'+num(r.avg_citations)+'</td></tr>';});
@@ -1539,6 +1564,7 @@ async function runDrift(){
     queryFilters.drift=[j||"all journals",w1.replace(":","–")+" vs "+w2.replace(":","–"),
       "top "+p.get("topN")];
     res.innerHTML=driftChart(data,j,w1,w2);
+    applyDataSizes(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 function driftChart(rows,journal,w1,w2){
@@ -1557,14 +1583,14 @@ function driftChart(rows,journal,w1,w2){
     const topic=esc(r.topic);
     if(d>=0){
       h+='<div class="drift-row"><div class="drift-left"></div><div class="drift-axis">›</div>'+
-        '<div class="drift-right"><div class="drift-fill rising" style="width:'+w+'%"></div>'+
+        '<div class="drift-right"><div class="drift-fill rising" data-w="'+w+'"></div>'+
         '<span class="drift-delta rising">+'+pctPts+'</span>'+
         '<span class="drift-topic rising" title="'+topic+'">'+topic+'</span></div></div>';
     }else{
       h+='<div class="drift-row"><div class="drift-left">'+
         '<span class="drift-topic fading" title="'+topic+'">'+topic+'</span>'+
         '<span class="drift-delta fading">'+pctPts+'</span>'+
-        '<div class="drift-fill fading" style="width:'+w+'%"></div></div>'+
+        '<div class="drift-fill fading" data-w="'+w+'"></div></div>'+
         '<div class="drift-axis">‹</div><div class="drift-right"></div></div>';
     }
   });
@@ -1623,10 +1649,10 @@ function readTable(rows,topic){
   if(!Array.isArray(rows)||!rows.length) return '<p class="meta">No papers found for "'+esc(topic)+'".</p>';
   let h=metaRow(rows.length+' papers · "'+esc(topic)+'" · retraction-checked',
     'read','bibliovera-reading-list.json');
-  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Reading list results"><table><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Citations</th><th>Status</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Reading list results"><table><thead><tr><th>#</th><th>Title</th><th class="u-ta-right">Citations</th><th>Status</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{
     const doi=paperDOI(r);
-    const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
+    const doiLink=doi?'<br><a class="alink doi-link" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer">'+esc(doi)+'</a>':'';
     const status=doi?'<span class="badge-checking">checking…</span>':'<span class="badge-checking">no DOI</span>';
     h+='<tr data-i="'+i+'"><td class="n">'+(i+1)+'</td><td>'+paperTitle(r)+doiLink+'</td>'+
       '<td class="n">'+num(paperCitations(r))+'</td><td id="st-'+i+'">'+status+'</td></tr>';
@@ -1713,15 +1739,15 @@ function riseTable(items,topic,journal,minYear,notes,velMode){
   const scope=journal?esc(journal):'all journals';
   let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+(minYear===null?'':' · from '+minYear),
     'rise','bibliovera-rising-papers.json');
-  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Rising papers results"><table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th style="text-align:right">Published</th>'+
-    '<th style="text-align:right">Cites</th><th class="cpy" style="text-align:right">Cites/yr</th>'+
-    (velMode?'<th style="text-align:right">Velocity</th>':'')+'<th>Status</th></tr></thead><tbody>';
+  h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Rising papers results"><table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th class="u-ta-right">Published</th>'+
+    '<th class="u-ta-right">Cites</th><th class="cpy u-ta-right">Cites/yr</th>'+
+    (velMode?'<th class="u-ta-right">Velocity</th>':'')+'<th>Status</th></tr></thead><tbody>';
   // A null velocity has two causes: too new (no complete year after publication yet) or not synced.
   const tooNewFrom=riseCurrentYear()-1;
   const isTooNew=x=>x.vel===null&&x.yr>=tooNewFrom;
   items.forEach((x,i)=>{
     const r=x.r, doi=paperDOI(r);
-    const doiLink=doi?'<br><a class="alink" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer" style="font-size:.78em;opacity:.7">'+esc(doi)+'</a>':'';
+    const doiLink=doi?'<br><a class="alink doi-link" href="https://doi.org/'+encodeURIComponent(doi)+'" target="_blank" rel="noopener noreferrer">'+esc(doi)+'</a>':'';
     const vel='<span class="badge-velocity">'+num(x.velocity)+'</span>';
     const why=x.vel!==null?'':' title="'+(isTooNew(x)?RISE_TOO_NEW:RISE_NOT_SYNCED)+'" aria-label="'+(isTooNew(x)?RISE_TOO_NEW:RISE_NOT_SYNCED)+'"';
     const velCell=velMode?'<td class="n"><span class="vel-val"'+why+'>'+riseFixed(x.vel)+'</span>'+riseTopBadge(x.pct)+
@@ -1772,7 +1798,7 @@ async function runMesh(){
         '<span><b>Drag</b> the background to pan · <b>Drag</b> a dot to move it · <b>Double-click</b> to reset'+
         '<button type="button" id="hintClear">✕ Clear (Esc)</button></span>'+
       '</div>'+
-      '<div class="glegend">'+[1,2,3,0].map(t=>'<span><i style="background:'+MESH_TIER_COLORS[t]+'"></i>'+MESH_TIER_NAMES[t]+'</span>').join('')+'</div>'+
+      '<div class="glegend">'+[1,2,3,0].map(t=>'<span><i class="'+(MESH_TIER_CLASSES[t]||'')+'"></i>'+MESH_TIER_NAMES[t]+'</span>').join('')+'</div>'+
       '<div class="gneigh" id="gNeigh"></div>'+
       '<p class="note">Each dot is a researcher; each line is shared Lancet papers between two co-authors (thicker = more shared works). Size and colour show how many co-authors an author has — see the legend above. The layout is fixed: nothing moves on its own, and a dot you move stays where you drop it. The controls are listed just under the graph.</p>';
     drawMeshGraph(pairs);
@@ -1783,6 +1809,9 @@ async function runMesh(){
 // On the dark background brighter reads as more important, so tier 1 is the
 // brightest and tier 0 the dimmest.
 const MESH_TIER_COLORS=["#5A6782","#F0E442","#E69F00","#56B4E9"];
+// The legend and the co-author list take the same colours from these classes
+// (closed list, one per tier; the .tier-N rules carry MESH_TIER_COLORS[N]).
+const MESH_TIER_CLASSES=["tier-0","tier-1","tier-2","tier-3"];
 const MESH_TIER_NAMES=["Others","Top 5% by co-authors","Next 15%","Next 30%"];
 // Radius multipliers by tier. The last step is +12% rather than +5% because
 // readers judge a circle by its diameter and so underestimate its area
@@ -2340,7 +2369,7 @@ function drawMeshGraph(pairs){
     const rows=pinnedRows();
     neighWrap.style.display="block";
     neighWrap.innerHTML='<h4>'+esc(d.id)+' \u00b7 '+d.deg+' co-author'+(d.deg===1?'':'s')+'</h4>'+
-      '<ul>'+rows.map(r=>'<li><i style="background:'+MESH_TIER_COLORS[r.o.tier]+'"></i>'+
+      '<ul>'+rows.map(r=>'<li><i class="'+(MESH_TIER_CLASSES[r.o.tier]||'')+'"></i>'+
         '<button type="button" data-author="'+esc(r.o.id)+'">'+esc(r.o.id)+'</button>'+
         ' \u2014 '+r.w+' shared work'+(r.w===1?'':'s')+'</li>').join('')+'</ul>';
   }
