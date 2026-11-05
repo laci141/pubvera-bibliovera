@@ -15,10 +15,11 @@
 // script-src with script-src-attr 'none', so an onclick= attribute does not
 // run: every control below works only through the delegated listeners. The
 // same header enforces connect-src ('self', plus the Supabase origin on server
-// B, csp.go cspConnectSrc) and names the report endpoints. A second header,
-// Content-Security-Policy-Report-Only, carries the style policy alone (style
-// S1, csp.go styleReportOnlyPolicy): the <style> block's nonce and
-// style-src-attr 'none'. It blocks nothing; T10 and T11 measure its reports.
+// B, csp.go cspConnectSrc) and names the report endpoints. Since style S2 the
+// same header also enforces the style policy: style-src with the <style>
+// block's nonce and style-src-attr 'none'. There is no
+// Content-Security-Policy-Report-Only header; T10 and T11 measure the style
+// policy.
 "use strict";
 const { test, expect } = require("@playwright/test");
 const { execFileSync, spawn } = require("child_process");
@@ -33,10 +34,7 @@ const bin = path.join(tmp, process.platform === "win32" ? "bibliovera.exe" : "bi
 
 const SUPA_ORIGIN = "https://example.supabase.co";
 // The enforcing policy, written out so a change to any directive fails T5.
-const policy = (nonce, origin) => "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; connect-src 'self'" + (origin ? " " + origin : "") + "; report-to csp; report-uri /csp-report";
-// The style Report-Only policy, written out: style-src alone, no script-src
-// or connect-src, so the script and connect violation counts stay as they are.
-const styleRO = nonce => "style-src 'nonce-" + nonce + "'; style-src-attr 'none'; report-to csp; report-uri /csp-report";
+const policy = (nonce, origin) => "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; style-src 'nonce-" + nonce + "'; style-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; connect-src 'self'" + (origin ? " " + origin : "") + "; report-to csp; report-uri /csp-report";
 const TAIL_A = "; connect-src 'self'; report-to csp; report-uri /csp-report";
 const TAIL_B = "; connect-src 'self' " + SUPA_ORIGIN + "; report-to csp; report-uri /csp-report";
 const VERSION = "9.9.9-browser-test";
@@ -298,14 +296,14 @@ test("T4 each of the 6 cards opens its modal and the close control closes it", a
 // header breaks the exact match, and get() is null only when the header is
 // absent.
 for (const [name, origin, supa] of [["A", () => urlA, ""], ["B", () => urlB, SUPA_ORIGIN]]) {
-  test("T5 headers on server " + name + ": one enforcing policy with connect-src, one style Report-Only policy with the same nonce", async () => {
+  test("T5 headers on server " + name + ": one enforcing policy with style-src and connect-src, no Report-Only policy", async () => {
     const res = await fetch(origin() + "/");
     expect(res.status).toBe(200);
     const csp = res.headers.get("content-security-policy") || "";
     const nonce = (/^script-src 'nonce-([A-Za-z0-9+/]{22})' /.exec(csp) || [])[1];
     expect(nonce).toBeDefined();
     expect(csp).toBe(policy(nonce, supa));
-    expect(res.headers.get("content-security-policy-report-only")).toBe(styleRO(nonce));
+    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
     // 5 script tags and the 1 style tag, all with the header's nonce.
     const body = await res.text();
     expect([...body.matchAll(/nonce="([^"]*)"/g)].map(m => m[1])).toEqual(Array(6).fill(nonce));
@@ -392,9 +390,8 @@ test("T8 signed in with Supabase, Sign out under enforced connect-src reaches /a
   expectNoCSPViolations(log, await violations(page));
   // Last, so a missing origin shows up as the refused logout first.
   expect(log.headers["content-security-policy"].endsWith(TAIL_B)).toBe(true);
-  // The Report-Only header is the style policy alone: no connect-src in it.
-  const nonce = (/'nonce-([^']+)'/.exec(log.headers["content-security-policy"]) || [])[1];
-  expect(log.headers["content-security-policy-report-only"]).toBe(styleRO(nonce));
+  // No Report-Only header: the style policy is in the enforcing one (S2).
+  expect(log.headers["content-security-policy-report-only"]).toBeUndefined();
 });
 
 // T9: the endpoint on the real server and mux, posted to directly.
@@ -422,9 +419,9 @@ test("T9 POST /csp-report on the real server answers 204 and logs one line witho
   expect(get.headers.get("allow")).toBe("POST");
 });
 
-// T10 and T11: the style Report-Only policy. The recorder in load() keeps
-// every securitypolicyviolation event; a report-only one has disposition
-// "report". Chromium (from @playwright/test 1.63.0) can fire one violation
+// T10 and T11: the enforced style policy. The recorder in load() keeps
+// every securitypolicyviolation event; an enforced one has disposition
+// "enforce". Chromium (from @playwright/test 1.63.0) can fire one violation
 // twice, so the controls count distinct violations.
 const styleViolations = async page => (await violations(page)).filter(v => v.directive.startsWith("style-src"));
 const distinct = vs => [...new Set(vs.map(v => v.directive + " " + v.blocked + " " + v.disposition))];
@@ -456,10 +453,11 @@ const SEARCH_DATA = {
   "/mesh": MESH_PAIRS,
 };
 
-test("T10 the real page raises no style-src and no style-src-attr report (load, 6 modals, 6 searches, mesh legend, tier colours, PNG export); the PNG keeps its size and its clone carries the computed styles", async ({ page }) => {
+test("T10 under the enforced style policy the real page raises no style-src and no style-src-attr violation (load, 6 modals, 6 searches, mesh legend, tier colours, PNG export); the PNG keeps its size and its clone carries the computed styles", async ({ page }) => {
   const log = await load(page, { data: SEARCH_DATA });
   const nonce = (/'nonce-([^']+)'/.exec(log.headers["content-security-policy"]) || [])[1];
-  expect(log.headers["content-security-policy-report-only"]).toBe(styleRO(nonce));
+  expect(log.headers["content-security-policy"]).toBe(policy(nonce, ""));
+  expect(log.headers["content-security-policy-report-only"]).toBeUndefined();
 
   const run = async (k, fill, done) => {
     await page.locator(".card[data-modal='" + k + "']").click();
@@ -576,7 +574,7 @@ test("T10 the real page raises no style-src and no style-src-attr report (load, 
   expect(await live()).toEqual(liveBefore);
 });
 
-test("T11 control: an un-nonced <style> raises one style-src report, a style attribute one style-src-attr report, and neither is blocked", async ({ page }) => {
+test("T11 control: an un-nonced <style> and a style attribute are blocked with one enforced violation each; a <style> with the page nonce applies", async ({ page }) => {
   const log = await load(page);
   expect(await styleViolations(page)).toEqual([]);
 
@@ -586,14 +584,24 @@ test("T11 control: an un-nonced <style> raises one style-src report, a style att
     document.head.appendChild(s);
   });
   await expect.poll(async () => (await styleViolations(page)).length).toBeGreaterThan(0);
-  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline report"]);
-  // Report-Only: the style still applies.
-  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).outlineColor)).toBe("rgb(1, 2, 3)");
+  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline enforce"]);
+  // Enforced: the style does not apply.
+  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).outlineColor)).not.toBe("rgb(1, 2, 3)");
 
   await page.evaluate(() => document.getElementById("app-version").setAttribute("style", "color: rgb(4, 5, 6)"));
   await expect.poll(async () => (await styleViolations(page)).filter(v => v.directive === "style-src-attr").length).toBeGreaterThan(0);
-  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline report", "style-src-attr inline report"]);
-  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).color)).toBe("rgb(4, 5, 6)");
+  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline enforce", "style-src-attr inline enforce"]);
+  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).color)).not.toBe("rgb(4, 5, 6)");
+
+  // The page nonce still admits a <style>: enforcement is not a blanket block.
+  await page.evaluate(() => {
+    const s = document.createElement("style");
+    s.nonce = document.querySelector("style[nonce]").nonce;
+    s.textContent = "#app-version{text-decoration-color:rgb(7, 8, 9)}";
+    document.head.appendChild(s);
+  });
+  expect(await page.locator("#app-version").evaluate(e => getComputedStyle(e).textDecorationColor)).toBe("rgb(7, 8, 9)");
+  expect(distinct(await styleViolations(page))).toEqual(["style-src-elem inline enforce", "style-src-attr inline enforce"]);
   // Nothing else: no script or connect violation, no page error.
   expect((await violations(page)).filter(v => !v.directive.startsWith("style-src"))).toEqual([]);
   expect(log.pageErrors).toEqual([]);
