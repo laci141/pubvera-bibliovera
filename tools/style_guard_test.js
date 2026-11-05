@@ -7,8 +7,9 @@
 // keeps working, so that is not checked here. index.html therefore carries no
 // style attribute, and the classes that replaced them must exist and be used:
 //   G1 no style= anywhere in index.html, markup and script strings;
-//   G2 setAttribute("style" appears exactly once: the mesh PNG export, which
-//      copies computed styles onto a serialised svg clone (S1/S2 decide it);
+//   G2 no setAttribute("style" at all: the mesh PNG export copies computed
+//      styles onto its serialised svg clone through the CSSOM, one
+//      style.setProperty per property (S1b), which style-src-attr allows;
 //   G3 each managed class is defined exactly once, in the doubled form .x.x
 //      (specificity 0,2,0, so it wins where the inline style won), never in
 //      the single form, and is used at least once;
@@ -46,14 +47,15 @@ check("G1 no style= in index.html (found " + plain.length + ")", plain.length ==
 check("G1 no style = \"...\" with spaces either (found " + spaced.length + ")", spaced.length === 0);
 for (const m of plain) console.log("      L" + lineOf(raw, m.index) + ": " + raw.slice(m.index, m.index + 40).split("\n")[0]);
 
-// ── G2: the one documented setAttribute("style") ──
+// ── G2: no setAttribute("style"); meshPNG copies through the CSSOM ──
 const setAttr = [...raw.matchAll(/setAttribute\s*\(\s*["'`]style["'`]/g)];
-const pngLine = /to\[i\]\.setAttribute\("style",props\.map\(q=>q\+":"\+cs\.getPropertyValue\(q\)\)\.join\(";"\)\);/;
-check("G2 setAttribute(\"style\" appears exactly once (found " + setAttr.length + ")", setAttr.length === 1);
-const pngAt = raw.search(pngLine);
-check("G2 that one is the mesh PNG export line inside meshPNG (L" + (pngAt < 0 ? "-" : lineOf(raw, pngAt)) + ")",
-  setAttr.length === 1 && pngAt >= 0 && raw.indexOf("setAttribute(\"style\"", pngAt) === setAttr[0].index &&
-  raw.lastIndexOf("meshPNG=()=>{", pngAt) > raw.lastIndexOf("\n}\n", pngAt));
+check("G2 no setAttribute(\"style\" in index.html (found " + setAttr.length + ")", setAttr.length === 0);
+for (const m of setAttr) console.log("      L" + lineOf(raw, m.index) + ": " + raw.slice(m.index, m.index + 60).split("\n")[0]);
+const pngStart = body.indexOf("meshPNG=()=>{");
+const pngBody = pngStart < 0 ? "" : body.slice(pngStart, body.indexOf("\n  };\n", pngStart));
+const copyLoop = /const from=src\.querySelectorAll\("\*"\), to=clone\.querySelectorAll\("\*"\);\n\s*for\(let i=0;i<from\.length;i\+\+\)\{\n\s*const cs=getComputedStyle\(from\[i\]\);\n\s*to\[i\]\.removeAttribute\("style"\);\n\s*props\.forEach\(q=>to\[i\]\.style\.setProperty\(q,cs\.getPropertyValue\(q\)\)\);\n\s*\}/;
+check("G2 meshPNG clears each clone element's style and sets every prop with to[i].style.setProperty" +
+  " (meshPNG at L" + (pngStart < 0 ? "-" : lineOf(body, pngStart)) + ")", copyLoop.test(pngBody));
 
 // ── G3/G4: the managed classes ──
 const TONE_KEYS = ["aff", "auth", "drift", "read", "rise", "mesh"];

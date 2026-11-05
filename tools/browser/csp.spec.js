@@ -456,7 +456,7 @@ const SEARCH_DATA = {
   "/mesh": MESH_PAIRS,
 };
 
-test("T10 the real page raises no style-src and no style-src-attr report (load, 6 modals, 6 searches, mesh legend, tier colours); the PNG export raises only report-only style-src-attr on its clone", async ({ page }) => {
+test("T10 the real page raises no style-src and no style-src-attr report (load, 6 modals, 6 searches, mesh legend, tier colours, PNG export); the PNG keeps its size and its clone carries the computed styles", async ({ page }) => {
   const log = await load(page, { data: SEARCH_DATA });
   const nonce = (/'nonce-([^']+)'/.exec(log.headers["content-security-policy"]) || [])[1];
   expect(log.headers["content-security-policy-report-only"]).toBe(styleRO(nonce));
@@ -506,38 +506,74 @@ test("T10 the real page raises no style-src and no style-src-attr report (load, 
   expect(await styleViolations(page), "style violations before the PNG export").toEqual([]);
   expectNoCSPViolations(log, await violations(page));
 
-  // The real PNG export click. meshPNG copies computed styles onto a detached
-  // clone of the svg with setAttribute("style", ...) (index.html, the one
-  // setAttribute("style" line; S1 leaves it as it is). Measured with Chromium
-  // from @playwright/test 1.63.0: it DOES raise style-src-attr on the clone,
-  // report-only, exactly one event per element under the svg (71 of 71, three
-  // runs out of three), all on that line; cloning the svg raises none. Nothing
-  // is blocked: the PNG is still written. S2 has to deal with this line before
-  // the policy is enforced.
-  const setAttrLine = fs.readFileSync(path.join(repo, "index.html"), "utf8").split(/\r?\n/)
-    .findIndex(l => l.includes('to[i].setAttribute("style"')) + 1;
-  expect(setAttrLine).toBeGreaterThan(0);
-  const svgElements = await page.evaluate(() => document.querySelectorAll("#graphWrap svg *").length);
+  // The real PNG export click. meshPNG copies the computed styles onto a
+  // detached clone of the svg through the CSSOM (to[i].style.setProperty per
+  // property, style S1b), which style-src-attr does not cover. S1 measured the
+  // old setAttribute("style", ...) here with Chromium from @playwright/test
+  // 1.63.0: one report-only style-src-attr event per element under the svg (71
+  // of 71). Now the export raises none, and the PNG is unchanged: same
+  // signature and pixel size as on main. The serialised clone is captured to
+  // check that each element carries exactly the copied properties with the
+  // live computed values, and that the live svg is left as it was.
+  // The pin starts a 450 ms zoom and .2s stroke-opacity transitions; wait them
+  // out so the computed values read below are the ones meshPNG reads.
+  await page.waitForTimeout(1500);
+  const props = JSON.parse("[" + (/const props=\[([^\]]*)\];/.exec(fs.readFileSync(path.join(repo, "index.html"), "utf8")
+    .replace(/\r\n/g, "\n").replace(/,\n\s*/g, ",")) || [])[1] + "]");
+  expect(props.length).toBeGreaterThan(0);
+  const live = () => page.evaluate(ps => [...document.querySelectorAll("#graphWrap svg *")].map(e => {
+    const cs = getComputedStyle(e);
+    return { tag: e.tagName, style: e.getAttribute("style"), computed: Object.fromEntries(ps.map(q => [q, cs.getPropertyValue(q)])) };
+  }), props);
+  const liveBefore = await live();
+  const svgElements = liveBefore.length;
   expect(svgElements).toBeGreaterThan(0);
+  const box = await page.locator("#graphWrap svg").evaluate(e => { const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
+  await page.evaluate(() => {
+    const orig = XMLSerializer.prototype.serializeToString;
+    XMLSerializer.prototype.serializeToString = function (n) {
+      const s = orig.call(this, n);
+      if (n && n.tagName === "svg") window.__pngSvg = s;
+      return s;
+    };
+  });
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.locator("#mesh_res button[data-action='mesh-png']").click(),
   ]);
   expect(download.suggestedFilename()).toBe("bibliovera-collaboration-Hub_Author.png");
-  expect(fs.readFileSync(await download.path()).subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
-  await expect.poll(async () => (await styleViolations(page)).length).toBe(svgElements);
-  // Let a late duplicate arrive before the exact count below.
+  const png = fs.readFileSync(await download.path());
+  expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  // IHDR width and height: 2x the svg box, plus the co-author list under it.
+  // 2266 x 1748 is what main (S1) wrote, measured three runs out of three.
+  expect(box.w * 2).toBe(png.readUInt32BE(16));
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([2266, 1748]);
+  // Let a late report arrive before the exact counts below.
   await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
-  const after = await styleViolations(page);
-  expect(distinct(after)).toEqual(["style-src-attr inline report"]);
-  expect([...new Set(after.map(v => v.line))]).toEqual([setAttrLine]);
-  expect(after).toHaveLength(svgElements);
-  // No other violation, no page error, and the only CSP console lines are the
-  // report-only style-src-attr ones.
-  expect((await violations(page)).filter(v => !v.directive.startsWith("style-src"))).toEqual([]);
-  expect(log.pageErrors).toEqual([]);
-  const cspLines = [...new Set(log.console.filter(m => CSP_RE.test(m)).map(m => m.replace(/'sha256-[^']+'/, "'sha256-HASH'")))];
-  expect(cspLines).toEqual(["info: Applying inline style violates the following Content Security Policy directive 'style-src-attr 'none''. Either the 'unsafe-inline' keyword, a hash ('sha256-HASH'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The policy is report-only, so the violation has been logged but no further action has been taken."]);
+  expect(await styleViolations(page), "style violations after the PNG export").toEqual([]);
+  expectNoCSPViolations(log, await violations(page));
+
+  // The serialised clone: the root svg plus one start tag per live element, in
+  // document order; each element's style holds exactly the copied properties.
+  const xml = await page.evaluate(() => window.__pngSvg);
+  expect(typeof xml).toBe("string");
+  const unq = v => v.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+  const tags = [...xml.matchAll(/<([a-zA-Z][\w:-]*)((?:\s+[\w:-]+="[^"]*")*)\s*\/?>/g)].slice(1).map(m => {
+    const st = /\sstyle="([^"]*)"/.exec(m[2]);
+    const decl = {};
+    for (const d of (st ? unq(st[1]) : "").split(";")) {
+      const i = d.indexOf(":");
+      if (i > 0) decl[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+    }
+    return { tag: m[1], decl };
+  });
+  expect(tags.map(t => t.tag)).toEqual(liveBefore.map(e => e.tag));
+  tags.forEach((t, i) => {
+    expect(Object.keys(t.decl).sort(), "copied properties on clone element " + i + " <" + t.tag + ">").toEqual([...props].sort());
+    expect(t.decl, "copied values on clone element " + i + " <" + t.tag + ">").toEqual(liveBefore[i].computed);
+  });
+  // The live svg keeps its own style attributes and computed styles.
+  expect(await live()).toEqual(liveBefore);
 });
 
 test("T11 control: an un-nonced <style> raises one style-src report, a style attribute one style-src-attr report, and neither is blocked", async ({ page }) => {
