@@ -59,6 +59,8 @@ function makeEl() {
     }
     return null;
   };
+  // applyDataSizes (runAff, runDrift) walks the bars; the shim tracks none.
+  el.querySelectorAll = () => [];
   return el;
 }
 const els = {};
@@ -205,6 +207,7 @@ function parseCSV(text) {
   byId("aff_minp").value = "13";
   byId("aff_lim").value = "59";
   await run("runAff()");
+  check("aff: runAff renders the table, not its catch (got " + JSON.stringify(byId("aff_res").innerHTML.slice(0, 80)) + ")", /<table/.test(byId("aff_res").innerHTML) && !/<p class="err">/.test(byId("aff_res").innerHTML));
   run('downloadCSVData("aff","a.csv")');
   const arecs = parseCSV(lastBlob());
   const acols = arecs[0];

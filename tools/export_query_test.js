@@ -57,6 +57,8 @@ function makeEl() {
     }
     return null;
   };
+  // applyDataSizes (runAff, runDrift) walks the bars; the shim tracks none.
+  el.querySelectorAll = () => [];
   return el;
 }
 const els = {};
@@ -154,6 +156,7 @@ const keywordOnly = (got, want) => got === want && !/[·"]|\d+\s*(papers|rows)/.
   byId("aff_journal").value = "lancet"; byId("aff_years").value = "3"; byId("aff_thr").value = "5";
   byId("aff_minp").value = "2"; byId("aff_lim").value = "25";
   await run("runAff()"); await tick();
+  check("aff: runAff renders the table, not its catch (got " + JSON.stringify(byId("aff_res").innerHTML.slice(0, 80)) + ")", /<table/.test(byId("aff_res").innerHTML) && !/<p class="err">/.test(byId("aff_res").innerHTML));
   check("aff: query is \"\" after a search (got " + JSON.stringify(q("aff")) + ")", q("aff") === "");
 
   byId("drift_journal").value = "lancet"; byId("drift_w1").value = "2005";

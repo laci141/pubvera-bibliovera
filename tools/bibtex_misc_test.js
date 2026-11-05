@@ -58,6 +58,8 @@ function makeEl() {
     }
     return null;
   };
+  // applyDataSizes (runAff, runDrift) walks the bars; the shim tracks none.
+  el.querySelectorAll = () => [];
   return el;
 }
 const els = {};
@@ -152,6 +154,7 @@ function checkEntry(name, key, keyword) {
   byId("aff_journal").value = "lancet"; byId("aff_years").value = "3"; byId("aff_thr").value = "5";
   byId("aff_minp").value = "2"; byId("aff_lim").value = "25";
   await run("runAff()"); await tick();
+  check("aff: runAff renders the table, not its catch (got " + JSON.stringify(byId("aff_res").innerHTML.slice(0, 80)) + ")", /<table/.test(byId("aff_res").innerHTML) && !/<p class="err">/.test(byId("aff_res").innerHTML));
   checkEntry("aff", "aff", "");
 
   byId("auth_inst").value = " Harvard University "; byId("auth_journal").value = "lancet";
