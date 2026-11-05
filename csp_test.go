@@ -14,16 +14,15 @@ import (
 // CSP: every <script> tag and the one <style> tag in index.html carry
 // nonce="__CSP_NONCE__", and each index response replaces that marker with a
 // fresh nonce named in the enforced Content-Security-Policy header, which also
-// enforces connect-src. The style policy (style S1) rides in a separate
-// Content-Security-Policy-Report-Only header with the same nonce and blocks
-// nothing. All requests go through handleRoot in-process (httptest), like
-// root_cache_test.go.
+// enforces style-src (style S2) and connect-src. There is no
+// Content-Security-Policy-Report-Only header. All requests go through
+// handleRoot in-process (httptest), like root_cache_test.go.
 
 // wantPolicy is written out here rather than taken from contentSecurityPolicy,
 // so a change to any directive in csp.go fails a test. tail is the connect-src
 // part, such as wantTailSelf or wantTailSupa.
 func wantPolicy(nonce, tail string) string {
-	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" + tail
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; style-src 'nonce-" + nonce + "'; style-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" + tail
 }
 
 // The header names and the marker are spelled out so a renamed constant cannot
@@ -33,13 +32,6 @@ const (
 	enforcingHeader  = "Content-Security-Policy"
 	nonceMarkerText  = "__CSP_NONCE__"
 )
-
-// wantStyleReportOnly is the whole Report-Only header, written out: style-src
-// alone (no script-src, connect-src or other directive, so the script
-// violation counts stay as they are) plus the report directives.
-func wantStyleReportOnly(nonce string) string {
-	return "style-src 'nonce-" + nonce + "'; style-src-attr 'none'; report-to csp; report-uri /csp-report"
-}
 
 // index.html has 5 <script> tags: the external d3 and xlsx-js-style bundles,
 // two classic inline scripts and one module, and 1 <style> tag. Each carries
@@ -52,23 +44,12 @@ const (
 
 var styleOpenRE = regexp.MustCompile(`<style\b[^>]*>`)
 
-// wantOneStyleReportOnly checks that h carries exactly one Report-Only header,
-// equal to the style policy with the nonce of the one enforcing header.
-func wantOneStyleReportOnly(t *testing.T, path string, h http.Header) {
+// wantNoReportOnly checks that h carries no Report-Only header: since style
+// S2 the style policy is enforced in the one Content-Security-Policy header.
+func wantNoReportOnly(t *testing.T, path string, h http.Header) {
 	t.Helper()
-	csp := h.Values(enforcingHeader)
-	ro := h.Values(reportOnlyHeader)
-	if len(csp) != 1 {
-		t.Errorf("GET %s: %s = %q, want exactly one policy to take the nonce from", path, enforcingHeader, csp)
-		return
-	}
-	m := cspNonceRE.FindStringSubmatch(csp[0])
-	if m == nil {
-		t.Errorf("GET %s: %s = %q has no nonce", path, enforcingHeader, csp[0])
-		return
-	}
-	if len(ro) != 1 || ro[0] != wantStyleReportOnly(m[1]) {
-		t.Errorf("GET %s: %s = %q, want [%q]", path, reportOnlyHeader, ro, wantStyleReportOnly(m[1]))
+	if ro := h.Values(reportOnlyHeader); len(ro) != 0 {
+		t.Errorf("GET %s: %s = %q, want none", path, reportOnlyHeader, ro)
 	}
 }
 
@@ -159,11 +140,11 @@ func TestCSPHeaderIsEnforcedWithExactPolicy(t *testing.T) {
 	}
 }
 
-// TestCSPIndexHasOneEnforcingPolicyAndOneStyleReportOnly does not use
-// indexNonce, so a missing enforcing header does not hide the Report-Only
-// check. connect-src lives in the one enforcing header; the one Report-Only
-// header carries the style policy alone, with the enforcing header's nonce.
-func TestCSPIndexHasOneEnforcingPolicyAndOneStyleReportOnly(t *testing.T) {
+// TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly does not use indexNonce,
+// so a missing enforcing header does not hide the Report-Only check. style-src
+// and connect-src live in the one enforcing header; there is no Report-Only
+// header.
+func TestCSPIndexHasOneEnforcingPolicyAndNoReportOnly(t *testing.T) {
 	t.Setenv("SUPABASE_URL", "")
 	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
 	for _, path := range []string{"/", "/index.html"} {
@@ -174,7 +155,7 @@ func TestCSPIndexHasOneEnforcingPolicyAndOneStyleReportOnly(t *testing.T) {
 		} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1], wantTailSelf) {
 			t.Errorf("GET %s: %s = %q, want the policy ending %q", path, enforcingHeader, csp[0], wantTailSelf)
 		}
-		wantOneStyleReportOnly(t, path, rec.Header())
+		wantNoReportOnly(t, path, rec.Header())
 		if got := rec.Header().Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 			t.Errorf("GET %s: %s = %q, want %q", path, reportingEndpointsHeader, got, wantReportingEndpoints)
 		}
@@ -191,8 +172,7 @@ const (
 
 // Enforced connect-src. supabaseConfig feeds both /config.json and the header,
 // so each case pins the helper, the one exact enforcing policy with its
-// connect-src part, the one style Report-Only header (never a connect-src in
-// it) and the /config.json body
+// connect-src part, no Report-Only header and the /config.json body
 // byte for byte. The /config.json bodies are the output of the code before
 // supabaseConfig existed (they pass on that code).
 func TestCSPEnforcedConnectSrcTable(t *testing.T) {
@@ -240,7 +220,7 @@ func TestCSPEnforcedConnectSrcTable(t *testing.T) {
 			} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1], tc.wantTail) {
 				t.Errorf("GET /: %s = %q, want the policy ending %q", enforcingHeader, csp[0], tc.wantTail)
 			}
-			wantOneStyleReportOnly(t, "/", rec.Header())
+			wantNoReportOnly(t, "/", rec.Header())
 			if got := rec.Header().Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 				t.Errorf("GET /: %s = %q, want %q", reportingEndpointsHeader, got, wantReportingEndpoints)
 			}
@@ -335,7 +315,8 @@ func TestCSPUnreadableIndexIs500WithoutPolicy(t *testing.T) {
 }
 
 // Through the whole mux, so /healthz (its own handler) is covered too: the
-// policies, the style Report-Only one included, are on the index page only.
+// policy and the Report-Only header (never sent since style S2) are on the
+// index page only.
 func TestCSPOnlyOnTheIndexPage(t *testing.T) {
 	for _, path := range []string{"/nope", "/config.json", "/healthz"} {
 		rec := httptest.NewRecorder()
