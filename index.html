@@ -2382,8 +2382,11 @@ function drawMeshGraph(pairs){
   // PNG export of the graph exactly as it is on screen (zoom, pan, moved
   // dots, focus), at 2x for print. The svg is styled by the stylesheet, which
   // a serialised copy does not carry, so the computed styles that matter are
-  // copied inline first. With a researcher pinned, the co-author list is
-  // drawn under the graph, so one image holds both.
+  // copied inline first, through the CSSOM (style.setProperty), which
+  // style-src-attr 'none' allows, unlike writing the style attribute. The clone's
+  // own inline styles are dropped first, as the attribute write did. With a
+  // researcher pinned, the co-author list is drawn under the graph, so one
+  // image holds both.
   meshPNG=()=>{
     const src=svg.node(), rect=src.getBoundingClientRect();
     const w=Math.round(rect.width), h=Math.round(rect.height);
@@ -2394,7 +2397,8 @@ function drawMeshGraph(pairs){
     const from=src.querySelectorAll("*"), to=clone.querySelectorAll("*");
     for(let i=0;i<from.length;i++){
       const cs=getComputedStyle(from[i]);
-      to[i].setAttribute("style",props.map(q=>q+":"+cs.getPropertyValue(q)).join(";"));
+      to[i].removeAttribute("style");
+      props.forEach(q=>to[i].style.setProperty(q,cs.getPropertyValue(q)));
     }
     clone.setAttribute("xmlns","http://www.w3.org/2000/svg");
     clone.setAttribute("width",w); clone.setAttribute("height",h);
