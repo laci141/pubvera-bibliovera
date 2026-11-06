@@ -162,6 +162,7 @@ const keywordOnly = (got, want) => got === want && !/[·"]|\d+\s*(papers|rows)/.
   byId("drift_journal").value = "lancet"; byId("drift_w1").value = "2005";
   byId("drift_w2").value = "2015"; byId("drift_top").value = "10";
   await run("runDrift()"); await tick();
+  check("drift: runDrift renders the rows, not its catch (got " + JSON.stringify(byId("drift_res").innerHTML.slice(0, 80)) + ")", /class="drift-row"/.test(byId("drift_res").innerHTML) && !/errcard/.test(byId("drift_res").innerHTML));
   check("drift: query is \"\" after a search (got " + JSON.stringify(q("drift")) + ")", q("drift") === "");
 
   // The three export surfaces, on the reading list (a real run above).
