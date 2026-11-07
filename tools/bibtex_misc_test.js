@@ -34,7 +34,7 @@ const paper = (title, doi) => ({ title, doi, journal: "Lancet", year: 2018, cite
 const authorRows = [{ author: "Jun Li", works: 12, citations: 300, institution: "Harvard University" }];
 const affRows = [{ institution: "Harvard University", recent: 10, prior: 1, growth: 9 }];
 const meshRows = [{ author_a: "Ann Lee", author_b: "Bo Kim", shared_works: 3 }];
-const driftRows = [{ topic: "Autism", w1: 1, w2: 5, delta: 4 }];
+const driftRows = [{ topic: "Autism", w1: 1, w2: 5, delta_share: 0.04 }];
 
 // ── DOM shim ──
 const stripTags = s => String(s).replace(/<[^>]*>/g, "");
@@ -169,6 +169,7 @@ function checkEntry(name, key, keyword) {
   byId("drift_w2").value = "2015"; byId("drift_top").value = "10";
   await run("runDrift()"); await tick();
   check("drift: runDrift renders the rows, not its catch (got " + JSON.stringify(byId("drift_res").innerHTML.slice(0, 80)) + ")", /class="drift-row"/.test(byId("drift_res").innerHTML) && !/errcard/.test(byId("drift_res").innerHTML));
+  check("drift: delta_share 0.04 renders as +4.0 points, not 0.0", /drift-delta rising">\+4\.0</.test(byId("drift_res").innerHTML));
   checkEntry("drift", "drift", "");
 
   byId("mesh_org").value = "Karolinska Institutet"; byId("mesh_lim").value = "50";
