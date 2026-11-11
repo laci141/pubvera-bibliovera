@@ -68,7 +68,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X main.a
 # trialvera and auth use. On the host /opt/pubvera/bibliovera-data and
 # /opt/pubvera/openalex-config-bibliovera.toml are owned by 10001:10001.
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates wget && adduser -D -u 10001 app
+# CVE-2026-4738: the base layer ships zlib 1.3.2-r1; upgrade only zlib to the
+# fixed 1.4-r0 (same fix as recallis and corpova), never a bare apk upgrade.
+RUN apk add --no-cache ca-certificates wget && apk upgrade --no-cache zlib && adduser -D -u 10001 app
 WORKDIR /app
 COPY --from=web-builder /out/server ./server
 COPY --from=cli-builder /go/bin/thelancet-pp-cli ./thelancet
