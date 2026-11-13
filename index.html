@@ -9,16 +9,20 @@
 <script nonce="__CSP_NONCE__" src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous"></script>
 <style nonce="__CSP_NONCE__">
   *{margin:0;padding:0;box-sizing:border-box}
-  html{scroll-behavior:smooth;font-size:160%}
+  /* Root at the browser default (16px): body 16px, labels ~13px, tables ~14px.
+     It was 160%, which made every rem size 1.6x and pushed the 3-column card
+     grid off laptop screens. */
+  html{scroll-behavior:smooth;font-size:100%}
+  /* Scroll lock while a modal is open (openModal/closeModal toggle the class). */
+  html.modal-open,html.modal-open body{overflow:hidden}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
     background:#0b1020;color:#e8eef7;line-height:1.6;min-height:100vh;
     /* Clearance for the fixed .brand-bar, term by term: its 8px padding twice,
        its tallest child, and the 1px border-bottom. The tallest child is an
        .auth-btn — 12px text at line-height 1, plus 5px padding and a 1px
        border on each side — which outgrows the 22px SVG mark.
-       In px, not rem, because html sits at font-size:160% on this page: this
-       deliberately differs from the sibling apps, whose rem-based calc() would
-       resolve to well over double the intended value here. Do not "unify". */
+       In px, not rem, because the bar itself is sized in px (shared across the
+       Pubvera apps), so the clearance must not follow this page's root size. */
     padding-top:calc(8px * 2 + max(22px, 12px + 5px * 2 + 2px) + 1px)}
 
   /* GLASS-PANEL: coloured background UNDERNEATH the panels — without it the
@@ -95,14 +99,18 @@
 
   .hero{display:flex;flex-direction:column;justify-content:center;align-items:center;
     padding:1.2rem 2rem .9rem;text-align:center}
+  /* The gradient ends on the lighter violet: #7c3aed under text is only ~2.9:1 on #0b1020. */
   .hero h1{font-size:clamp(2rem,5vw,3rem);font-weight:700;margin-bottom:.5rem;
-    background:linear-gradient(90deg,#00d4ff,#7c3aed);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .hero p{font-size:1rem;color:#aab}
+    background:linear-gradient(90deg,#00d4ff,#a78bfa);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .hero p{font-size:1.05rem;color:#aab;max-width:46rem}
+  .hero p.hero-src{font-size:.85rem;color:#8d97ad;margin-top:.35rem}
   /* Mini diagram next to the title — SVG, because under background-clip:text
      an emoji renders as a solid rectangle */
   .h1-mark{width:.8em;height:.8em;vertical-align:-.06em;margin-right:.1em}
 
-  .bento{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;padding:.7rem 2rem 2.2rem;max-width:1400px;margin:0 auto}
+  /* minmax(0,1fr), not 1fr (= minmax(auto,1fr)): a track may shrink below its
+     text, so the three cards in a row are equal and never widen the page. */
+  .bento{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.5rem;padding:.7rem 2rem 2.2rem;max-width:1400px;margin:0 auto}
 
   /* GLASS-PANEL cards — flat landscape rectangle, icon on the left, text on one line */
   .card{background:linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.045));
@@ -113,10 +121,19 @@
     -webkit-backdrop-filter:blur(15px);
     box-shadow:0 18px 50px -18px rgba(0,0,0,.75)}
   .card:hover{transform:translateY(-6px);border-color:rgba(255,255,255,.3);box-shadow:0 22px 60px -14px rgba(0,0,0,.8)}
-  .card .ic{font-size:2.3rem;line-height:1;flex-shrink:0}
+  /* Icons are inline SVG in currentColor, so each takes its module colour on
+     every platform (emoji glyphs differed per OS and some were near-invisible).
+     The module colour sits on the left border and the icon only; the title text
+     is neutral. --ct is the text-safe variant of --c (lighter where --c is dark). */
+  .card .ic{font-size:2.1rem;line-height:1;flex-shrink:0;color:var(--ct,var(--c))}
+  .ico{width:1em;height:1em;display:block;fill:none;stroke:currentColor;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  /* Holds the <symbol>s the icons <use>; takes no space. */
+  .sprite{position:absolute;width:0;height:0;overflow:hidden}
   .card .tx{display:flex;flex-direction:column;min-width:0}
-  .card .lb{font-size:1.2rem;font-weight:600;color:var(--c);white-space:nowrap}
-  .card .sub{font-size:.8rem;color:#99a;margin-top:.1rem;white-space:nowrap}
+  /* Wraps when a column is narrow instead of widening the grid track. */
+  .card .lb{font-size:1.2rem;font-weight:600;color:#e8eef7;white-space:normal;overflow-wrap:break-word}
+  .card .sub{font-size:.85rem;color:#99a;margin-top:.1rem;white-space:normal;overflow-wrap:break-word}
   /* The card is a <button> (keyboard operable), so its parts are spans: give the
      spans the block layout the old divs had and strip the button defaults. */
   button.card{font:inherit;color:inherit;text-align:inherit;width:100%;margin:0;appearance:none;-webkit-appearance:none}
@@ -142,15 +159,36 @@
   /* The network needs more room than a table does, so the mesh modal alone is
      40% wider than the shared 1600px; 96vw keeps it inside the viewport. */
   #meshModal .mc{width:2240px;max-width:96vw}
-  .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
-  .mh h2{font-size:1.4rem;color:var(--c)}
-  .x{background:none;border:none;color:#999;font-size:1.9rem;cursor:pointer;line-height:1}.x:hover{color:#fff}
+  .mh{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:.6rem}
+  .mh h2{font-size:1.4rem;color:#e8eef7;display:flex;align-items:center;gap:.55rem}
+  .mh h2 .ico{color:var(--ct,var(--c));flex-shrink:0}
+  /* 44x44 touch target (WCAG 2.5.8 asks 24x24; 44 is the usual touch size). */
+  .x{background:none;border:none;color:#aab;font-size:1.9rem;cursor:pointer;line-height:1;
+    min-width:44px;min-height:44px;display:grid;place-items:center;border-radius:10px;flex-shrink:0}.x:hover{color:#fff}
+  /* The form is a compact grid capped at ~900px; only the results use the full modal width. */
+  .mform{max-width:900px}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:0 1.5rem}
+  .fgrid .wide{grid-column:1/-1}
   label{display:block;font-size:.82rem;color:#ccd;margin:.75rem 0 .3rem;font-weight:500}
   select,input[type=text]{width:100%;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.14);border-radius:.5rem;
     padding:.6rem .7rem;color:#e8eef7;font-size:.95rem}
   select:focus,input[type=text]:focus{outline:none;border-color:var(--c)}
+  /* Own chevron instead of the browser arrow. */
+  select{appearance:none;-webkit-appearance:none;padding-right:2.2rem;cursor:pointer;
+    background:rgba(0,0,0,.35) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23aab' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right .8rem center}
   select option{background:#1a1a2e}
-  input[type=range]{width:100%;accent-color:var(--c)}
+  /* Styled track and thumb; the module colour fills the thumb. */
+  input[type=range]{width:100%;accent-color:var(--c);-webkit-appearance:none;appearance:none;background:transparent;
+    height:22px;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:999px;background:rgba(255,255,255,.16)}
+  input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:rgba(255,255,255,.16)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;margin-top:-6px;
+    border-radius:50%;background:var(--ct,var(--c));border:2px solid #0b1020;box-shadow:0 0 0 1px rgba(255,255,255,.35)}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--ct,var(--c));
+    border:2px solid #0b1020;box-shadow:0 0 0 1px rgba(255,255,255,.35)}
+  /* Min / max captions under a slider (decorative: the slider exposes its range itself). */
+  .mm{display:flex;justify-content:space-between;font-size:.7rem;color:#99a;font-variant-numeric:tabular-nums;margin-top:.1rem}
+  .numpair+.mm{margin-right:6.2rem}
   .val{font-variant-numeric:tabular-nums;color:#fff;font-weight:700}
   /* Slider + numeric field on one line; the field is a narrow input[type=text]. */
   .numpair{display:flex;align-items:center;gap:.7rem}
@@ -158,29 +196,45 @@
   .numpair input[type=text]{width:5.5rem;flex:none;text-align:right;font-variant-numeric:tabular-nums}
   .row2{display:flex;gap:1rem}
   .row2>div{flex:1}
-  .btn{background:linear-gradient(90deg,#00d4ff,#7c3aed);border:none;color:#000;padding:.7rem 2rem;border-radius:.5rem;
+  /* One brand gradient for every action. It ends on #a78bfa, not #7c3aed: black
+     text on #7c3aed is ~3.7:1, on #a78bfa ~7.6:1. */
+  .btn{background:linear-gradient(90deg,#00d4ff,#a78bfa);border:none;color:#000;padding:.7rem 2rem;border-radius:.5rem;
     font-weight:700;cursor:pointer;transition:.3s;font-size:1rem;margin-top:1.1rem;width:100%}
   .btn:hover{transform:scale(1.01);box-shadow:0 8px 24px rgba(0,212,255,.3)}
-  .results{margin-top:1.3rem;animation:fade .3s ease}
+  .results{margin-top:1.3rem;animation:fade .3s ease;scroll-margin-top:.5rem}
 
   /* Result header: row count on the left, JSON download button on the right */
   .meta-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:.6rem;gap:12px}
   .meta{font-size:.82rem;color:#99a;min-width:0}
+  /* .dl and the filter share one pill height (2rem) so the toolbar is one even row. */
   .dl{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#cdd6ea;
-    padding:4px 14px;border-radius:999px;font-size:.75rem;font-weight:600;cursor:pointer;
-    transition:.2s;white-space:nowrap;flex-shrink:0}
-  .dl:hover{background:rgba(255,255,255,.15);border-color:var(--c);color:#fff}
+    padding:0 14px;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;
+    transition:.2s;white-space:nowrap;flex-shrink:0;height:2rem;line-height:1}
+  .dl:hover{background:rgba(255,255,255,.15);border-color:#00d4ff;color:#fff}
   .dl-group{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;max-width:100%;align-items:center}
-  .qfilter{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.16);border-radius:999px;
-    padding:4px 14px;color:#e8eef7;font-size:.78rem;width:190px}
-  .qfilter:focus{outline:none;border-color:var(--c)}
+  /* input.qfilter (0,1,1), not .qfilter (0,1,0): the global select,input[type=text]
+     rule is 0,1,1 too and comes first, so this one wins by order. */
+  input.qfilter{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.16);border-radius:999px;
+    padding:0 14px;color:#e8eef7;font-size:.78rem;width:220px;height:2rem;line-height:1}
+  input.qfilter:focus{outline:none;border-color:var(--c)}
   .qcount{color:#7dd3fc;font-size:.78rem;font-weight:600;margin-left:6px}
+  /* Visible focus ring on every field, slider and button (the 1px border change
+     alone was not enough, and for Authors it was low contrast). Placed after the
+     :focus rules above so it wins at equal specificity. */
+  select:focus-visible,input[type=text]:focus-visible,input[type=range]:focus-visible,input.qfilter:focus-visible,
+  .btn:focus-visible,.dl:focus-visible,.x:focus-visible{outline:2px solid var(--ct,var(--c,#00d4ff));outline-offset:2px}
 
   table{width:100%;border-collapse:collapse;font-size:.88rem}
   th,td{text-align:left;padding:.5rem .9rem .5rem 0;border-bottom:1px solid rgba(255,255,255,.07)}
   th{color:#9aa4bf;font-weight:600;white-space:nowrap}
   td{white-space:normal}
-  tbody tr:hover{background:rgba(255,255,255,.04)}
+  /* Zebra rows and a capped width: on a wide modal the name and its numbers were
+     400-900px apart. The scroll wrapper itself stays full width. */
+  .results table{max-width:1100px}
+  /* Toolbar and notes of a table result line up with the capped table (the graph keeps the full width). */
+  .results:has(> .table-scroll)>.meta-row,.results:has(> .table-scroll)>.note{max-width:1100px}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.025)}
+  tbody tr:hover{background:rgba(255,255,255,.06)}
   .results table th{cursor:pointer;user-select:none}
   .results table th:hover{color:#e8eef7}
   .results table th::after{content:" ⇅";opacity:.35;font-size:.8em}
@@ -290,8 +344,12 @@
   .drift-delta{font-variant-numeric:tabular-nums;font-size:.78rem;font-weight:700;white-space:nowrap;flex-shrink:0}
   .drift-delta.rising{color:#4ade80}
   .drift-delta.fading{color:#f87171}
-  .drift-axis{text-align:center;font-size:.72rem;color:#778;font-weight:700}
+  .drift-axis{text-align:center;font-size:.72rem;color:#8d97ad;font-weight:700}
   .drift-legend{display:flex;justify-content:space-between;font-size:.78rem;color:#99a;margin:.4rem 0 .8rem}
+  /* Legend swatches (were the red/green circle emoji). */
+  .drift-legend i{display:inline-block;width:.7em;height:.7em;border-radius:50%;vertical-align:-.02em;margin:0 .35em}
+  .drift-legend i.fading{background:#f87171}
+  .drift-legend i.rising{background:#4ade80}
 
   /* Collaboration graph (D3 force-directed) — zoom+pan, large labels with a strong halo */
   .graph-wrap{position:relative;width:100%;height:85vh;min-height:520px;max-height:1100px;
@@ -345,12 +403,14 @@
 
   .note{font-size:.78rem;color:rgba(255,255,255,.5);margin-top:1.1rem;line-height:1.5;white-space:normal}
 
-  footer{text-align:center;padding:1.8rem;color:#778;border-top:1px solid rgba(255,255,255,.05);font-size:.82rem}
+  footer{text-align:center;padding:1.8rem;color:#8d97ad;border-top:1px solid rgba(255,255,255,.05);font-size:.82rem}
   footer a{color:#00d4ff;text-decoration:none}footer a:hover{text-decoration:underline}
 
   /* Mobile: smaller blur + less padding + cards stacked on top of each other */
   @media(max-width:768px){
-    html{font-size:120%}
+    /* The root stays at 100% here too (it was 120%). Fields get 16px so iOS
+       does not zoom the page when one takes focus. */
+    select,input[type=text],input.qfilter{font-size:16px}
     .bento{grid-template-columns:1fr;padding:.5rem 1rem 1.8rem}
     .hero{padding:1rem 1rem .7rem}
     .hero p br{display:none}
@@ -375,9 +435,10 @@
     .brand-word{font-size:13px}
     /* Same derivation as the desktop rule, with this block's numbers: 6px of
        bar padding twice, the tallest child — here the 22px mark wins, the
-       smaller button no longer does — and the 1px border. Still px: html drops
-       to 120% here, which is exactly why the bar's own sizing is not in rem. */
+       smaller button no longer does — and the 1px border. Still px, for the
+       same reason as the desktop rule: the bar's own sizing is not in rem. */
     body{padding-top:calc(6px * 2 + max(22px, 11px + 4px * 2 + 2px) + 1px)}
+    .mh h2{font-size:1.2rem}
     .auth-bar{gap:6px}
     .auth-email{font-size:11px;max-width:30vw}
     .auth-btn{font-size:11px;padding:4px 10px}
@@ -389,11 +450,24 @@
     .card .lb,.card .sub{white-space:normal;overflow-wrap:anywhere}
   }
 
-  /* Desktop 769-1379px: three fixed columns plus nowrap labels overflow the page. Here the grid
-     auto-fits (1 column to 940px, 2 from 941px) and the labels wrap. 1380px and up keeps the 3-column design. */
-  @media(min-width:769px) and (max-width:1379px){
-    .bento{grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}
+  /* Narrow desktop / tablet 769-999px: still 3 columns x 2 rows (the owner's layout; never 2x3), with a
+     tighter card so the text has room. The base rule (minmax(0,1fr) + wrapping labels) already keeps the
+     page from overflowing; this block only makes the narrow cards readable. Phones (<=768px) are 1 column. */
+  @media(min-width:769px) and (max-width:999px){
+    .bento{grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;padding:.6rem 1.2rem 2rem}
+    .card{padding:.9rem 1rem;gap:.7rem}
+    .card .ic{font-size:1.6rem}
+    .card .lb{font-size:1.02rem}
     .card .lb,.card .sub{white-space:normal;overflow-wrap:break-word}
+  }
+
+  /* Reduced motion: no card lift, no modal fade/slide, no smooth scrolling, a slower spinner. */
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    .card,.btn,.dl,.bar-chart{transition:none}
+    .card:hover,.btn:hover{transform:none}
+    .modal,.mc,.results{animation:none}
+    .spin{animation-duration:1.6s}
   }
 
   /* Desktop only: the count text takes a 260px basis so it wraps onto its own line instead of being squeezed
@@ -407,9 +481,19 @@
     border:1px solid rgba(255,255,255,.10);border-radius:16px;
     backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);
     box-shadow:0 18px 50px -18px rgba(0,0,0,.75);
-    font-size:.72rem;line-height:1.5;color:#8d97ad;text-align:center}
+    font-size:.78rem;line-height:1.5;color:#8d97ad;text-align:center}
   @media (max-width:600px){
     table.vel .cpy{display:none}   /* Rising: Velocity replaces Cites/yr on phones, same column count as before */
+    /* Phones: the number stays, the bar graphic goes, and the cells tighten so
+       the Growth column fits without scrolling sideways. */
+    .results table{font-size:.8rem}
+    .results th,.results td{padding:.45rem .5rem .45rem 0}
+    .results td{overflow-wrap:anywhere}   /* one long word must not set the table's minimum width */
+    .modal{padding:.5rem}
+    .results table th::after{content:none}
+    .bar-container .bar-chart{display:none}
+    .bar-number{min-width:0}
+    .results td .badge-new,.results td .badge-low,.results td .growth-badge{padding:1px 6px;font-size:.72rem}
     .disclaimer{margin:0 1rem 1.5rem;padding:12px 14px;border-radius:14px;
       backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);font-size:.68rem}
     .mesh-groups,.dl-menu{--mg-blur:12px}
@@ -422,9 +506,9 @@
      Each rule repeats its class (.x.x, specificity 0,2,0) so it wins where the
      inline style won. Script that sets el.style.x keeps working (applyDataSizes). */
   .tone-aff.tone-aff{--c:#00d4ff}
-  .tone-auth.tone-auth{--c:#7c3aed}
+  .tone-auth.tone-auth{--c:#7c3aed;--ct:#a78bfa}
   .tone-drift.tone-drift{--c:#22c55e}
-  .tone-read.tone-read{--c:#38bdf8}
+  .tone-read.tone-read{--c:#60a5fa}
   .tone-rise.tone-rise{--c:#f59e0b}
   .tone-mesh.tone-mesh{--c:#ec4899}
   .u-ta-right.u-ta-right{text-align:right}
@@ -470,141 +554,199 @@
 
 <section class="hero">
   <h1><svg class="h1-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect x="8" y="34" width="12" height="22" rx="3" fill="#00d4ff"/><rect x="26" y="22" width="12" height="34" rx="3" fill="#3b82f6"/><rect x="44" y="10" width="12" height="46" rx="3" fill="#7c3aed"/></svg> Bibliovera</h1>
-  <p>Institution growth, author rankings and topic trends across the medical journal
-  literature,<br>computed from a local OpenAlex mirror — keyless, data-driven analytics.</p>
+  <p>Fastest-growing institutions, most-cited authors and rising topics across the Lancet journals.</p>
+  <p class="hero-src">Computed from open OpenAlex metadata (CC0).</p>
 </section>
+
+<!-- Module icons: one <symbol> each, drawn in currentColor, used by the card and
+     by the modal title. Decorative: every <use> sits in an aria-hidden SVG. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-aff" viewBox="0 0 24 24"><path d="M3 21h18M5 21V9l7-5 7 5v12M9.5 21v-5h5v5M9 11.5h.01M15 11.5h.01"/></symbol>
+  <symbol id="i-auth" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21c.6-3.8 3.7-6 7.5-6s6.9 2.2 7.5 6"/></symbol>
+  <symbol id="i-drift" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></symbol>
+  <symbol id="i-read" viewBox="0 0 24 24"><path d="M2.5 5h6a3.5 3.5 0 0 1 3.5 3.5V20a2.5 2.5 0 0 0-2.5-2.5h-7zM21.5 5h-6A3.5 3.5 0 0 0 12 8.5V20a2.5 2.5 0 0 1 2.5-2.5h7z"/></symbol>
+  <symbol id="i-rise" viewBox="0 0 24 24"><path d="M13 2.5L4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+  <symbol id="i-mesh" viewBox="0 0 24 24"><circle cx="5.5" cy="6" r="2.5"/><circle cx="18.5" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 6h8M6.8 8.2l4 7.6M17.2 8.2l-4 7.6"/></symbol>
+</svg>
 
 <section class="bento">
   <button type="button" class="card tone-aff" data-action="open-modal" data-modal="aff">
-    <span class="ic">👥</span>
+    <span class="ic"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-aff"/></svg></span>
     <span class="tx"><span class="lb">Affiliations</span><span class="sub">Institution growth</span></span>
   </button>
   <button type="button" class="card tone-auth" data-action="open-modal" data-modal="auth">
-    <span class="ic">✍️</span>
+    <span class="ic"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-auth"/></svg></span>
     <span class="tx"><span class="lb">Authors</span><span class="sub">Ranked by citations</span></span>
   </button>
   <button type="button" class="card tone-drift" data-action="open-modal" data-modal="drift">
-    <span class="ic">📈</span>
+    <span class="ic"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-drift"/></svg></span>
     <span class="tx"><span class="lb">Topic Trends</span><span class="sub">Rising &amp; fading themes</span></span>
   </button>
   <button type="button" class="card tone-read" data-action="open-modal" data-modal="read">
-    <span class="ic">📚</span>
+    <span class="ic"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-read"/></svg></span>
     <span class="tx"><span class="lb">Reading List</span><span class="sub">Ranked + retraction-checked</span></span>
   </button>
   <button type="button" class="card tone-rise" data-action="open-modal" data-modal="rise">
-    <span class="ic">🚀</span>
+    <span class="ic"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-rise"/></svg></span>
     <span class="tx"><span class="lb">Rising Papers</span><span class="sub">Fastest-cited fresh work</span></span>
   </button>
   <button type="button" class="card tone-mesh" data-action="open-modal" data-modal="mesh">
-    <span class="ic">🕸️</span>
+    <span class="ic"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-mesh"/></svg></span>
     <span class="tx"><span class="lb">Collaboration</span><span class="sub">Co-authorship network</span></span>
   </button>
 </section>
 
 <!-- Affiliations modal -->
 <div class="modal" id="affModal"><div class="mc tone-aff" role="dialog" aria-modal="true" aria-labelledby="affModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="affModalTitle">👥 Affiliation Growth</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="aff">&times;</button></div>
-  <label>Journal</label>
-  <select id="aff_journal">
-    <option value="">All Lancet journals</option>
-    <option value="lancet" selected>The Lancet (flagship)</option>
-    <option value="lancet-neurology">Lancet Neurology</option>
-    <option value="lancet-oncology">Lancet Oncology</option>
-    <option value="lancet-infectious-diseases">Lancet Infectious Diseases</option>
-    <option value="lancet-public-health">Lancet Public Health</option>
-    <option value="lancet-digital-health">Lancet Digital Health</option>
-  </select>
-  <label>Window (years) · <span class="val" id="aff_years_v">5</span></label>
-  <input type="range" id="aff_years" min="1" max="20" value="5" data-mirror="aff_years_v">
-  <label>Threshold (min recent pubs) · <span class="val" id="aff_thr_v">2</span></label>
-  <input type="range" id="aff_thr" min="1" max="10" value="2" data-mirror="aff_thr_v">
-  <!-- Not a filter: the server keeps every institution and moves those below
-       this number to the end of the list, flagged as a low base. "Min" read as
-       a cutoff, which it has never been. -->
-  <label>Low prior base · sorted last below <span class="val" id="aff_minp_v">5</span></label>
-  <input type="range" id="aff_minp" min="0" max="20" value="5" data-mirror="aff_minp_v">
-  <label>Limit · <span class="val" id="aff_lim_v">25</span></label>
-  <input type="range" id="aff_lim" min="1" max="100" value="25" data-mirror="aff_lim_v">
+  <div class="mh"><h2 id="affModalTitle"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-aff"/></svg>Affiliation Growth</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="aff">&times;</button></div>
+  <div class="mform">
+  <div class="fgrid">
+    <div class="wide">
+      <label for="aff_journal">Journal</label>
+      <select id="aff_journal">
+        <option value="">All Lancet journals</option>
+        <option value="lancet" selected>The Lancet (flagship)</option>
+        <option value="lancet-neurology">Lancet Neurology</option>
+        <option value="lancet-oncology">Lancet Oncology</option>
+        <option value="lancet-infectious-diseases">Lancet Infectious Diseases</option>
+        <option value="lancet-public-health">Lancet Public Health</option>
+        <option value="lancet-digital-health">Lancet Digital Health</option>
+      </select>
+    </div>
+    <div>
+      <label for="aff_years">Window (years) · <span class="val" id="aff_years_v">5</span></label>
+      <input type="range" id="aff_years" min="1" max="20" value="5" data-mirror="aff_years_v">
+      <div class="mm" aria-hidden="true"><span>1</span><span>20</span></div>
+    </div>
+    <div>
+      <label for="aff_thr">Threshold (min recent pubs) · <span class="val" id="aff_thr_v">2</span></label>
+      <input type="range" id="aff_thr" min="1" max="10" value="2" data-mirror="aff_thr_v">
+      <div class="mm" aria-hidden="true"><span>1</span><span>10</span></div>
+    </div>
+    <div>
+      <!-- Not a filter: the server keeps every institution and moves those below
+           this number to the end of the list, flagged as a low base. "Min" read as
+           a cutoff, which it has never been. -->
+      <label for="aff_minp">Low prior base · sorted last below <span class="val" id="aff_minp_v">5</span></label>
+      <input type="range" id="aff_minp" min="0" max="20" value="5" data-mirror="aff_minp_v">
+      <div class="mm" aria-hidden="true"><span>0</span><span>20</span></div>
+    </div>
+    <div>
+      <label for="aff_lim">Limit · <span class="val" id="aff_lim_v">25</span></label>
+      <input type="range" id="aff_lim" min="1" max="100" value="25" data-mirror="aff_lim_v">
+      <div class="mm" aria-hidden="true"><span>1</span><span>100</span></div>
+    </div>
+  </div>
   <button class="btn" data-action="run-aff">Run Analysis</button>
+  </div>
   <div class="results" id="aff_res"></div>
 </div></div>
 
 <!-- Authors modal -->
 <div class="modal" id="authModal"><div class="mc tone-auth" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="authModalTitle">✍️ Author Rankings</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="auth">&times;</button></div>
-  <label>Institution (substring, optional)</label>
-  <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
-  <div class="lenmsg err" id="auth_inst_msg" aria-live="polite"></div>
-  <label>Journal (optional)</label>
-  <select id="auth_journal">
-    <option value="">All Lancet journals</option>
-    <option value="lancet">The Lancet (flagship)</option>
-    <option value="lancet-neurology">Lancet Neurology</option>
-    <option value="lancet-oncology">Lancet Oncology</option>
-  </select>
-  <label>Min works · <span class="val" id="auth_minw_v">2</span></label>
-  <input type="range" id="auth_minw" min="1" max="10" value="2" data-mirror="auth_minw_v">
-  <label>Authors shown (max) · <span class="val" id="auth_lim_v">25</span></label>
-  <input type="range" id="auth_lim" min="1" max="300" value="25" data-mirror="auth_lim_v">
+  <div class="mh"><h2 id="authModalTitle"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-auth"/></svg>Author Rankings</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="auth">&times;</button></div>
+  <div class="mform">
+  <div class="fgrid">
+    <div>
+      <label for="auth_inst">Institution (substring, optional)</label>
+      <input aria-describedby="auth_inst_msg" type="text" id="auth_inst" placeholder="Oxford, Harvard, Inserm…">
+      <div class="lenmsg err" id="auth_inst_msg" aria-live="polite"></div>
+    </div>
+    <div>
+      <label for="auth_journal">Journal (optional)</label>
+      <select id="auth_journal">
+        <option value="">All Lancet journals</option>
+        <option value="lancet">The Lancet (flagship)</option>
+        <option value="lancet-neurology">Lancet Neurology</option>
+        <option value="lancet-oncology">Lancet Oncology</option>
+        <option value="lancet-infectious-diseases">Lancet Infectious Diseases</option>
+        <option value="lancet-public-health">Lancet Public Health</option>
+        <option value="lancet-digital-health">Lancet Digital Health</option>
+      </select>
+    </div>
+    <div>
+      <label for="auth_minw">Min works · <span class="val" id="auth_minw_v">2</span></label>
+      <input type="range" id="auth_minw" min="1" max="10" value="2" data-mirror="auth_minw_v">
+      <div class="mm" aria-hidden="true"><span>1</span><span>10</span></div>
+    </div>
+    <div>
+      <label for="auth_lim">Authors shown (max) · <span class="val" id="auth_lim_v">25</span></label>
+      <input type="range" id="auth_lim" min="1" max="300" value="25" data-mirror="auth_lim_v">
+      <div class="mm" aria-hidden="true"><span>1</span><span>300</span></div>
+    </div>
+  </div>
   <button class="btn" data-action="run-auth">Run Analysis</button>
+  </div>
   <div class="results" id="auth_res"></div>
 </div></div>
 
 <!-- Topic Trends (drift) modal -->
 <div class="modal" id="driftModal"><div class="mc tone-drift" role="dialog" aria-modal="true" aria-labelledby="driftModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="driftModalTitle">📈 Topic Trends</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="drift">&times;</button></div>
-  <label>Journal</label>
-  <select id="drift_journal">
-    <option value="">All Lancet journals</option>
-    <option value="lancet" selected>The Lancet (flagship)</option>
-    <option value="lancet-neurology">Lancet Neurology</option>
-    <option value="lancet-oncology">Lancet Oncology</option>
-    <option value="lancet-infectious-diseases">Lancet Infectious Diseases</option>
-    <option value="lancet-public-health">Lancet Public Health</option>
-    <option value="lancet-digital-health">Lancet Digital Health</option>
-  </select>
-  <div class="row2">
-    <div>
-      <label>Earlier window · <span class="val" id="drift_w1_v">2015–2019</span></label>
-      <input type="range" id="drift_w1" min="2005" max="2020" value="2015" data-input="set-w1">
+  <div class="mh"><h2 id="driftModalTitle"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-drift"/></svg>Topic Trends</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="drift">&times;</button></div>
+  <div class="mform">
+  <div class="fgrid">
+    <div class="wide">
+      <label for="drift_journal">Journal</label>
+      <select id="drift_journal">
+        <option value="">All Lancet journals</option>
+        <option value="lancet" selected>The Lancet (flagship)</option>
+        <option value="lancet-neurology">Lancet Neurology</option>
+        <option value="lancet-oncology">Lancet Oncology</option>
+        <option value="lancet-infectious-diseases">Lancet Infectious Diseases</option>
+        <option value="lancet-public-health">Lancet Public Health</option>
+        <option value="lancet-digital-health">Lancet Digital Health</option>
+      </select>
     </div>
     <div>
-      <label>Later window · <span class="val" id="drift_w2_v">2020–2024</span></label>
+      <label for="drift_w1">Earlier window · <span class="val" id="drift_w1_v">2015–2019</span></label>
+      <input type="range" id="drift_w1" min="2005" max="2020" value="2015" data-input="set-w1">
+      <div class="mm" aria-hidden="true"><span>2005</span><span>2020</span></div>
+    </div>
+    <div>
+      <label for="drift_w2">Later window · <span class="val" id="drift_w2_v">2020–2024</span></label>
       <input type="range" id="drift_w2" min="2010" max="2024" value="2020" data-input="set-w2">
+      <div class="mm" aria-hidden="true"><span>2010</span><span>2024</span></div>
+    </div>
+    <div>
+      <label for="drift_top">Top topics · <span class="val" id="drift_top_v">15</span></label>
+      <input type="range" id="drift_top" min="5" max="40" value="15" data-mirror="drift_top_v">
+      <div class="mm" aria-hidden="true"><span>5</span><span>40</span></div>
     </div>
   </div>
-  <label>Top topics · <span class="val" id="drift_top_v">15</span></label>
-  <input type="range" id="drift_top" min="5" max="40" value="15" data-mirror="drift_top_v">
   <button class="btn" data-action="run-drift">Run Analysis</button>
+  </div>
   <div class="results" id="drift_res"></div>
 </div></div>
 
 <!-- Reading List (curate + retraction) modal -->
 <div class="modal" id="readModal"><div class="mc tone-read" role="dialog" aria-modal="true" aria-labelledby="readModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="readModalTitle">📚 Reading List</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="read">&times;</button></div>
-  <label>Topic / keyword</label>
-  <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
-  <div class="lenmsg err" id="read_topic_msg" aria-live="polite"></div>
-  <div class="row2">
+  <div class="mh"><h2 id="readModalTitle"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-read"/></svg>Reading List</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="read">&times;</button></div>
+  <div class="mform">
+  <div class="fgrid">
+    <div class="wide">
+      <label for="read_topic">Topic / keyword</label>
+      <input aria-describedby="read_topic_msg" type="text" id="read_topic" placeholder="e.g. immunotherapy, gene therapy, COVID-19…">
+      <div class="lenmsg err" id="read_topic_msg" aria-live="polite"></div>
+    </div>
     <div>
-      <label>Sort by</label>
+      <label for="read_sort">Sort by</label>
       <select id="read_sort">
         <option value="citations" selected>Citations</option>
         <option value="date">Date (newest)</option>
       </select>
     </div>
     <div>
-      <label>Limit · <span class="val" id="read_lim_v">15</span></label>
+      <label for="read_lim">Limit · <span class="val" id="read_lim_v">15</span></label>
       <input type="range" id="read_lim" min="5" max="40" value="15" data-mirror="read_lim_v">
+      <div class="mm" aria-hidden="true"><span>5</span><span>40</span></div>
     </div>
-  </div>
-  <div class="row2">
     <div>
       <label for="read_year_n">Min year · <span class="val" id="read_year_v">Any</span></label>
       <div class="numpair">
         <input type="range" id="read_year" min="2005" max="2026" value="2005" aria-label="Min year slider" data-input="num-from-slider" data-id="read_year">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="read_year_n" placeholder="Any" aria-describedby="read_year_n_msg">
       </div>
+      <div class="mm" aria-hidden="true"><span>2005</span><span>2026</span></div>
       <div class="lenmsg err" id="read_year_n_msg" aria-live="polite"></div>
     </div>
     <div>
@@ -613,22 +755,27 @@
         <input type="range" id="read_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" data-input="num-from-slider" data-id="read_cites">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="read_cites_n" placeholder="Any" aria-describedby="read_cites_n_msg">
       </div>
+      <div class="mm" aria-hidden="true"><span>0</span><span>500</span></div>
       <div class="lenmsg err" id="read_cites_n_msg" aria-live="polite"></div>
     </div>
   </div>
   <button class="btn" data-action="run-read">Build Reading List</button>
+  </div>
   <div class="results" id="read_res"></div>
 </div></div>
 
 <!-- Rising Papers modal -->
 <div class="modal" id="riseModal"><div class="mc tone-rise" role="dialog" aria-modal="true" aria-labelledby="riseModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="riseModalTitle">🚀 Rising Papers</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="rise">&times;</button></div>
-  <label>Topic / keyword</label>
-  <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
-  <div class="lenmsg err" id="rise_topic_msg" aria-live="polite"></div>
-  <div class="row2">
+  <div class="mh"><h2 id="riseModalTitle"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-rise"/></svg>Rising Papers</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="rise">&times;</button></div>
+  <div class="mform">
+  <div class="fgrid">
+    <div class="wide">
+      <label for="rise_topic">Topic / keyword</label>
+      <input aria-describedby="rise_topic_msg" type="text" id="rise_topic" placeholder="e.g. immunotherapy, mRNA, AI diagnosis…">
+      <div class="lenmsg err" id="rise_topic_msg" aria-live="polite"></div>
+    </div>
     <div>
-      <label>Journal (optional — A: all, B: one)</label>
+      <label for="rise_journal">Journal (optional)</label>
       <select id="rise_journal">
         <option value="">All Lancet journals</option>
         <option value="lancet">The Lancet (flagship)</option>
@@ -640,17 +787,17 @@
       </select>
     </div>
     <div>
-      <label>Rows shown · <span class="val" id="rise_lim_v">40</span></label>
+      <label for="rise_lim">Rows shown · <span class="val" id="rise_lim_v">40</span></label>
       <input type="range" id="rise_lim" min="10" max="60" value="40" data-mirror="rise_lim_v">
+      <div class="mm" aria-hidden="true"><span>10</span><span>60</span></div>
     </div>
-  </div>
-  <div class="row2">
     <div>
       <label for="rise_year_n">Min year (only papers from this year on) · <span class="val" id="rise_year_v">2018</span></label>
       <div class="numpair">
         <input type="range" id="rise_year" min="2005" max="2024" value="2018" aria-label="Min year slider" data-input="num-from-slider" data-id="rise_year">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="rise_year_n" value="2018" placeholder="Any" aria-describedby="rise_year_n_msg">
       </div>
+      <div class="mm" aria-hidden="true"><span>2005</span><span>2024</span></div>
       <div class="lenmsg err" id="rise_year_n_msg" aria-live="polite"></div>
     </div>
     <div>
@@ -659,37 +806,48 @@
         <input type="range" id="rise_cites" min="0" max="500" step="10" value="0" aria-label="Min citations slider" data-input="num-from-slider" data-id="rise_cites">
         <input type="text" inputmode="numeric" pattern="[0-9]*" id="rise_cites_n" placeholder="Any" aria-describedby="rise_cites_n_msg">
       </div>
+      <div class="mm" aria-hidden="true"><span>0</span><span>500</span></div>
       <div class="lenmsg err" id="rise_cites_n_msg" aria-live="polite"></div>
     </div>
   </div>
   <button class="btn" data-action="run-rise">Find Rising Papers</button>
+  </div>
   <div class="results" id="rise_res"></div>
 </div></div>
 
 <!-- Collaboration (mesh) modal -->
 <div class="modal" id="meshModal"><div class="mc tone-mesh" role="dialog" aria-modal="true" aria-labelledby="meshModalTitle" tabindex="-1">
-  <div class="mh"><h2 id="meshModalTitle">🕸️ Collaboration Network</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="mesh">&times;</button></div>
-  <label>Institution</label>
-  <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
-  <div class="lenmsg err" id="mesh_org_msg" aria-live="polite"></div>
-  <label>Max co-authorship pairs · <span class="val" id="mesh_lim_v">40</span></label>
-  <input type="range" id="mesh_lim" min="10" max="500" step="10" value="40" data-mirror="mesh_lim_v">
+  <div class="mh"><h2 id="meshModalTitle"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-mesh"/></svg>Collaboration Network</h2><button class="x" aria-label="Close" data-action="close-modal" data-modal="mesh">&times;</button></div>
+  <div class="mform">
+  <div class="fgrid">
+    <div>
+      <label for="mesh_org">Institution</label>
+      <input aria-describedby="mesh_org_msg" type="text" id="mesh_org" placeholder="e.g. Oxford, Stanford, Harvard, Inserm…">
+      <div class="lenmsg err" id="mesh_org_msg" aria-live="polite"></div>
+    </div>
+    <div>
+      <label for="mesh_lim">Max co-authorship pairs · <span class="val" id="mesh_lim_v">40</span></label>
+      <input type="range" id="mesh_lim" min="10" max="500" step="10" value="40" data-mirror="mesh_lim_v">
+      <div class="mm" aria-hidden="true"><span>10</span><span>500</span></div>
+    </div>
+  </div>
   <button class="btn" data-action="run-mesh">Map Network</button>
+  </div>
   <div class="results" id="mesh_res"></div>
 </div></div>
 
-<footer>
-  Bibliovera — a Pubvera app · serve-mode research analytics · <a href="https://github.com/laci141/pubvera-bibliovera" target="_blank" rel="noopener">GitHub</a>
-  · Powered by <a href="https://github.com/mvanhorn/printing-press-library" target="_blank" rel="noopener">Printing Press Library</a>
-  <span id="app-version"></span>
-</footer>
-
+<!-- The disclaimer sits above the footer, so the page ends on the footer line. -->
 <div class="disclaimer">
   Bibliovera is an independent research-analytics tool. It is not affiliated with, endorsed by,
   or sponsored by The Lancet, Elsevier, or any journal listed in this application.
   Journal names are trademarks of their respective owners and are used solely to identify
   publicly available publication metadata, sourced from OpenAlex (CC0).
 </div>
+
+<footer>
+  Bibliovera — a Pubvera app · serve-mode research analytics · Powered by <a href="https://github.com/mvanhorn/printing-press-library" target="_blank" rel="noopener">Printing Press Library</a>
+  <span id="app-version"></span>
+</footer>
 
 <div class="gtip" id="gtip"></div>
 
@@ -699,6 +857,27 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=n=>(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:1});
 const CUR_YEAR=new Date().getFullYear();
+
+// Human journal names for the result meta lines (the same text as the <option>s).
+// The exports keep the slug in their "filters", unchanged.
+const JOURNAL_LABELS={"":"All Lancet journals",lancet:"The Lancet (flagship)",
+  "lancet-neurology":"Lancet Neurology","lancet-oncology":"Lancet Oncology",
+  "lancet-infectious-diseases":"Lancet Infectious Diseases","lancet-public-health":"Lancet Public Health",
+  "lancet-digital-health":"Lancet Digital Health"};
+function journalLabel(slug){
+  const s=String(slug==null?"":slug);
+  return Object.prototype.hasOwnProperty.call(JOURNAL_LABELS,s)?JOURNAL_LABELS[s]:s;
+}
+
+// After a successful run, bring the results into view: on a phone the form fills
+// the first screen. block:"nearest" leaves them alone when they are already
+// visible. Smooth only when the user has not asked for reduced motion.
+function revealResults(res){
+  if(!res||typeof res.scrollIntoView!=="function")return;
+  const reduce=typeof window!=="undefined"&&typeof window.matchMedia==="function"&&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  res.scrollIntoView({block:"nearest",behavior:reduce?"auto":"smooth"});
+}
 
 // ── Field length limits ──
 // Mirror of the server's text-param limits in main.go (maxNameChars): the server
@@ -1210,7 +1389,7 @@ function metaRow(text,key,filename,extra){
     '</div></div>';
   return '<div class="meta-row"><span class="meta">'+text+'<span class="qcount"></span></span>'+
     '<span class="dl-group">'+
-    '<input class="qfilter" type="text" placeholder="🔍 Filter results…">'+
+    '<input class="qfilter" type="text" placeholder="Filter results…" aria-label="Filter results">'+
     (extra||'')+
     exportMenu+
     '</span></div>';
@@ -1261,6 +1440,8 @@ function openModal(k,opener){
   const m=$("#"+k+"Modal"), mc=m.querySelector(".mc");
   modalOpener=opener||document.activeElement;
   m.classList.add("active");
+  // Scroll lock: the page behind the modal must not scroll (inert only stops focus).
+  if(document.documentElement)document.documentElement.classList.add("modal-open");
   for(const el of Array.from(document.body.children)){
     if(el.tagName==="SCRIPT"||el.tagName==="STYLE"||el.inert) continue;
     if(el.matches(".modal.active")||el.querySelector(".modal.active")) continue;
@@ -1271,6 +1452,7 @@ function openModal(k,opener){
 }
 function closeModal(k){
   $("#"+k+"Modal").classList.remove("active");
+  if(document.documentElement)document.documentElement.classList.remove("modal-open");
   for(const el of modalInerted) el.inert=false;
   modalInerted=[];
   document.removeEventListener("keydown",onModalKey);
@@ -1433,6 +1615,7 @@ async function runAff(){
     res.innerHTML=affTable(data,j,p);
     applyDataSizes(res);
     updateQcount(res);
+    revealResults(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 // params is the URLSearchParams actually sent, not the sliders: those can be
@@ -1458,7 +1641,7 @@ function affTable(rows,journal,params){
     if(params.get('threshold'))scope.push('min '+params.get('threshold')+' recent');
     if(params.get('minPrior'))scope.push('low base <'+params.get('minPrior'));
   }
-  let h=metaRow(rows.length+' institutions'+(journal?' · '+esc(journal):' · all journals')+
+  let h=metaRow(rows.length+' institutions · '+esc(journalLabel(journal))+
     (scope.length?' · '+esc(scope.join(' · ')):''),
     'aff','bibliovera-affiliations.json');
   h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Institutions results"><table><thead><tr><th>#</th><th>Institution</th><th class="u-ta-right">Recent</th><th class="u-ta-right">Prior</th><th>Growth</th></tr></thead><tbody>';
@@ -1476,7 +1659,7 @@ function affTable(rows,journal,params){
     if(prior===0){
       growth='<span class="badge-new">no prior</span>';
     }else if(r.low_base){
-      growth='<span class="badge-low">⚠️ low base</span>';
+      growth='<span class="badge-low">low base</span>';
     }else{
       const pct=growthPct(r);
       const cls=pct>=0?'growth-positive':'growth-negative';
@@ -1509,6 +1692,7 @@ async function runAuth(){
       "min "+p.get("minWorks")+" works","limit "+p.get("limit")]);
     res.innerHTML=authTable(data,inst,p);
     updateQcount(res);
+    revealResults(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 function authorLink(r){
@@ -1531,7 +1715,7 @@ function authTable(rows,inst,params){
   if(!Array.isArray(rows)||!rows.length) return '<p class="meta">No authors matched'+(inst?' for "'+esc(inst)+'"':'')+'.</p>';
   const scope=[];
   if(params){
-    scope.push(params.get('journal')||'all journals');
+    scope.push(journalLabel(params.get('journal')||''));
     if(params.get('minWorks'))scope.push('min '+params.get('minWorks')+' works');
   }
   let h=metaRow(rows.length+' authors'+(inst?' · '+esc(inst):'')+
@@ -1565,6 +1749,7 @@ async function runDrift(){
       "top "+p.get("topN")];
     res.innerHTML=driftChart(data,j,w1,w2);
     applyDataSizes(res);
+    revealResults(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 function driftChart(rows,journal,w1,w2){
@@ -1572,10 +1757,10 @@ function driftChart(rows,journal,w1,w2){
   rows.sort((a,b)=>(Number(b.delta_share)||0)-(Number(a.delta_share)||0));
   const maxAbs=Math.max(...rows.map(r=>Math.abs(Number(r.delta_share)||0)),0.0001);
   const w1lbl=w1.replace(":","–"), w2lbl=w2.replace(":","–");
-  let h=metaRow(rows.length+' topics'+(journal?' · '+esc(journal):' · all journals')+
+  let h=metaRow(rows.length+' topics · '+esc(journalLabel(journal))+
     ' · '+esc(w1lbl)+' vs '+esc(w2lbl),'drift','bibliovera-topic-trends.json');
-  h+='<div class="drift-legend"><span>🔴 Fading ('+esc(w1lbl)+' stronger)</span>'+
-    '<span>Rising ('+esc(w2lbl)+' stronger) 🟢</span></div>';
+  h+='<div class="drift-legend"><span><i class="fading" aria-hidden="true"></i>Fading ('+esc(w1lbl)+' stronger)</span>'+
+    '<span>Rising ('+esc(w2lbl)+' stronger)<i class="rising" aria-hidden="true"></i></span></div>';
   rows.forEach(r=>{
     const d=Number(r.delta_share)||0;
     const pctPts=(d*100).toFixed(1);
@@ -1632,6 +1817,7 @@ async function runRead(){
       .concat(minY!==null?["from "+minY]:[],minC>0?["min "+minC+" citations"]:[]);
     res.innerHTML=readTable(rows,topic);
     updateQcount(res);
+    revealResults(res);
     checkRetractions(rows,rows,"st-","read",runId);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
@@ -1729,14 +1915,15 @@ async function runRise(){
       minC>0?["min "+minC+" citations"]:[],["limit "+limit]);
     res.innerHTML=riseTable(ranked,topic,j,minYear,notes.concat([risePoolText]),velMode);
     updateQcount(res);
+    revealResults(res);
     checkRetractions(ranked.map(x=>x.r),lastData.rise,"rst-","rise",runId);
   }catch(e){if(current())res.innerHTML=errorHTML(e);}
 }
 function riseTable(items,topic,journal,minYear,notes,velMode){
   const noteHTML=(notes||[]).map(n=>'<p class="note">'+esc(n)+'</p>').join("");
   if(!items.length) return '<p class="meta">No papers '+(minYear===null?'':'from '+minYear+' on ')+'for "'+esc(topic)+'"'+
-    (journal?' in '+esc(journal):'')+'. Try '+(minYear===null?'a broader topic':'a lower min year or a broader topic')+'.</p>'+noteHTML;
-  const scope=journal?esc(journal):'all journals';
+    (journal?' in '+esc(journalLabel(journal)):'')+'. Try '+(minYear===null?'a broader topic':'a lower min year or a broader topic')+'.</p>'+noteHTML;
+  const scope=esc(journalLabel(journal));
   let h=metaRow(items.length+' rising papers · "'+esc(topic)+'" · '+scope+(minYear===null?'':' · from '+minYear),
     'rise','bibliovera-rising-papers.json');
   h+='<div class="table-scroll" role="region" tabindex="0" aria-label="Rising papers results"><table'+(velMode?' class="vel"':'')+'><thead><tr><th>#</th><th>Title</th><th class="u-ta-right">Published</th>'+
@@ -1802,6 +1989,7 @@ async function runMesh(){
       '<div class="gneigh" id="gNeigh"></div>'+
       '<p class="note">Each dot is a researcher; each line is shared Lancet papers between two co-authors (thicker = more shared works). Size and colour show how many co-authors an author has — see the legend above. The layout is fixed: nothing moves on its own, and a dot you move stays where you drop it. The controls are listed just under the graph.</p>';
     drawMeshGraph(pairs);
+    revealResults(res);
   }catch(e){res.innerHTML=errorHTML(e);}
 }
 
@@ -2603,8 +2791,9 @@ async function checkRetractions(papers,store,prefix,mod,runId){
   });
 }
 
-// .qcount always shows the final count, after every filter — that is how many
-// rows go into the export as well.
+// .qcount shows the final count, after every filter — that is how many rows go
+// into the export as well. Only while the filter hides rows: "12 / 12 rows" next
+// to "12 institutions" said the same thing twice.
 function updateQcount(res){
   if(!res)return;
   const cnt=res.querySelector(".qcount");
@@ -2613,7 +2802,7 @@ function updateQcount(res){
   if(!table){cnt.textContent="";return;}
   const rows=[...table.querySelectorAll("tbody tr")];
   const vis=rows.filter(r=>r.style.display!=="none").length;
-  cnt.textContent=" · "+vis+" / "+rows.length+" rows";
+  cnt.textContent=vis===rows.length?"":" · "+vis+" / "+rows.length+" rows";
 }
 
 // Delegated quick filter: as you type it hides the non-matching rows, with a counter.
