@@ -543,9 +543,9 @@ test("T10 under the enforced style policy the real page raises no style-src and 
   const png = fs.readFileSync(await download.path());
   expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
   // IHDR width and height: 2x the svg box, plus the co-author list under it.
-  // 2266 x 1748 is what main (S1) wrote, measured three runs out of three.
+  // 2334 x 1748 since the UI review (root font 100%, wider mesh modal box); was 2266 x 1748 on main (S1). Line above still ties the PNG to the box.
   expect(box.w * 2).toBe(png.readUInt32BE(16));
-  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([2266, 1748]);
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([2334, 1748]);
   // Let a late report arrive before the exact counts below.
   await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
   expect(await styleViolations(page), "style violations after the PNG export").toEqual([]);
