@@ -574,6 +574,82 @@ test("T10 under the enforced style policy the real page raises no style-src and 
   expect(await live()).toEqual(liveBefore);
 });
 
+// T12: the group filter. Two 5-author cliques (A*, B*) joined by one weak
+// link: meshCommunities splits them into 2 groups of 5. A selected group shows
+// its members and their links only (display:none on the rest), a hidden
+// position picks nothing, a pin inside the group lists members only, a second
+// group button switches directly, Escape clears the pin then the group, and
+// All restores the full graph. All under the enforced style policy.
+const CLIQUE = p => { const out = []; for (let i = 1; i <= 5; i++) for (let j = i + 1; j <= 5; j++) out.push({ author_a: p + i, author_b: p + j, shared_works: 3 }); return out; };
+const GROUP_PAIRS = [...CLIQUE("A"), ...CLIQUE("B"), { author_a: "A5", author_b: "B1", shared_works: 1 }];
+test("T12 group filter: non-members and their links are display:none and not pickable, pin stays inside the group, switch, Escape and All restore the graph", async ({ page }) => {
+  const log = await load(page, { data: { ...DATA, "/mesh": GROUP_PAIRS } });
+  await page.locator(".card[data-modal='mesh']").click();
+  await page.locator("#mesh_org").fill("Group test");
+  await page.locator("#meshModal button[data-action='run-mesh']").click();
+  await expect(page.locator("#graphWrap svg circle")).toHaveCount(10);
+  const state = () => page.evaluate(() => {
+    const svg = document.querySelector("#graphWrap svg"), shown = e => getComputedStyle(e).display !== "none";
+    const c = [...svg.querySelectorAll("circle.gnode")].filter(shown).map(e => e.__data__.id).sort();
+    return { circles: c, links: [...svg.querySelectorAll("line.glink")].filter(shown).length,
+      labels: [...svg.querySelectorAll("text.glabel")].filter(e => shown(e) && !c.includes(e.__data__.id)).length,
+      pressed: [...document.querySelectorAll("#meshGroupsBody button[aria-pressed='true']")].map(b => b.getAttribute("data-group")) };
+  });
+  const all = await state();
+  expect(all.circles).toHaveLength(10);
+  expect(all.links).toBe(21);
+  const open = () => page.evaluate(() => { document.querySelector("#meshGroups").open = true; });
+  await open();
+  await expect(page.locator("#meshGroupsBody button[data-group]")).toHaveCount(3);
+  await page.locator("#meshGroupsBody button[data-group='0']").click();
+  await page.waitForTimeout(700);
+  const g0 = await state();
+  expect(g0.circles).toHaveLength(5);
+  const p0 = g0.circles[0][0];
+  expect(g0.circles.every(id => id[0] === p0)).toBe(true);
+  expect(g0.links).toBe(10);
+  expect(g0.labels).toBe(0);
+  expect(g0.pressed).toEqual(["0"]);
+  // A hidden node's screen position (from its data and the zoom): nothing is picked there.
+  await page.locator("#graphWrap").scrollIntoViewIfNeeded();
+  const pt = id => page.evaluate(id => {
+    const svg = document.querySelector("#graphWrap svg"), sr = svg.getBoundingClientRect(), t = svg.__zoom, s = sr.width / svg.viewBox.baseVal.width;
+    const d = [...svg.querySelectorAll("circle.gnode")].map(e => e.__data__).find(o => o.id === id);
+    return { x: sr.left + (t.x + t.k * d.x) * s, y: sr.top + (t.y + t.k * d.y) * s, inside: true };
+  }, id);
+  const other = (p0 === "A" ? "B" : "A") + "3";
+  const hp = await pt(other);
+  await page.mouse.move(hp.x - 2, hp.y); await page.mouse.move(hp.x, hp.y);
+  await page.waitForTimeout(300);
+  expect(await page.locator("#graphWrap").evaluate(e => e.classList.contains("near"))).toBe(false);
+  // Pin a member: the co-author list holds members only (4, not the bridge partner).
+  const mp = await pt(p0 + "2");
+  await page.mouse.move(mp.x - 2, mp.y); await page.mouse.move(mp.x, mp.y);
+  await page.mouse.click(mp.x, mp.y);
+  await expect(page.locator("#gNeigh li")).toHaveCount(4);
+  expect((await page.locator("#gNeigh li button").allTextContents()).every(t => t[0] === p0)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#gNeigh li")).toHaveCount(0);
+  expect((await state()).pressed).toEqual(["0"]);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(700);
+  expect(await state()).toEqual(all);
+  await expect(page.locator("#meshModal")).toHaveClass(/\bactive\b/);
+  // Switch 0 -> 1 directly, then All.
+  await open();
+  await page.locator("#meshGroupsBody button[data-group='0']").click();
+  await page.locator("#meshGroupsBody button[data-group='1']").click();
+  await page.waitForTimeout(700);
+  const g1 = await state();
+  expect(g1.circles).toHaveLength(5);
+  expect(g1.circles.every(id => id[0] !== p0)).toBe(true);
+  expect(g1.pressed).toEqual(["1"]);
+  await page.locator("#meshGroupsBody button[data-group='all']").click();
+  await page.waitForTimeout(700);
+  expect(await state()).toEqual(all);
+  expectNoCSPViolations(log, await violations(page));
+});
+
 test("T11 control: an un-nonced <style> and a style attribute are blocked with one enforced violation each; a <style> with the page nonce applies", async ({ page }) => {
   const log = await load(page);
   expect(await styleViolations(page)).toEqual([]);

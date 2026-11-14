@@ -2227,9 +2227,12 @@ function drawMeshGraph(pairs){
     const pt=d3.pointer(ev,svg.node());
     const g=t.invert(pt);
     const r=PICK_PX/(t.k*viewS);
-    if(meshSim&&typeof meshSim.find==="function") return meshSim.find(g[0],g[1],r)||null;
+    // A selected group hides everyone else (display:none), and a hidden node
+    // must not answer hover, click or drag: the scan skips it, find() cannot.
+    if(!selGroup&&meshSim&&typeof meshSim.find==="function") return meshSim.find(g[0],g[1],r)||null;
     let best=null,bd=r*r;
     for(const d of nodes){
+      if(!inGroup(d)) continue;
       const dx=d.x-g[0], dy=d.y-g[1], q=dx*dx+dy*dy;
       if(q<bd){bd=q;best=d;}
     }
@@ -2273,12 +2276,21 @@ function drawMeshGraph(pairs){
   let dragFrom=[0,0], dragMoved=false, svgFrom=null;
   let keptLabels=new Set(), labelRaf=0;
   let selGroup=null;   // the selected group: {id, members, set}, or null
+  let preGroupView=null;   // the zoom transform from before the first group was selected
+  function inGroup(d){ return !selGroup||selGroup.set.has(d.id); }
+  // A selected group shows its members and the links between them, nothing
+  // else: everyone outside it is display:none (set through d3, never a style
+  // attribute in HTML, so the CSP holds), not dimmed. No group: all shown.
+  function applyGroupVis(){
+    node.style("display",selGroup?d=>inGroup(d)?null:"none":null);
+    link.style("display",selGroup?l=>(inGroup(l.source)&&inGroup(l.target))?null:"none":null);
+  }
   function applyLabelVis(k){
     if(k!==undefined) zoomK=k;
     // While a researcher is focused (hover preview or pin) only they and
     // their co-authors keep a name: the faded names of everyone else were
-    // noise behind the ones being read.
-    label.style("display",d=>forcedLabels&&!forcedLabels.has(d.id)?"none":null)
+    // noise behind the ones being read. Names outside the group are hidden too.
+    label.style("display",d=>!inGroup(d)||(forcedLabels&&!forcedLabels.has(d.id))?"none":null)
       .style("visibility",d=>forcedLabels||keptLabels.has(d.id)?null:"hidden");
   }
   // Screen-space box of one name, measured, not estimated: getBBox() of the
@@ -2422,16 +2434,17 @@ function drawMeshGraph(pairs){
   // empty space that clears the pin. A pin outranks hover: while one is set
   // the pointer changes nothing.
   function applyFocus(id){
+    applyGroupVis();
     if(!id){
       forcedLabels=null; applyLabelVis(); updateLabels();
-      // No focus: the whole graph, or the selected group alone (same dimming as below).
-      const inG=d=>!selGroup||selGroup.set.has(d.id);
-      node.style("opacity",selGroup?o=>inG(o)?1:.15:null);
-      label.style("opacity",selGroup?o=>inG(o)?1:.15:null);
-      link.style("stroke-opacity",selGroup?l=>(inG(l.source)&&inG(l.target))?null:.03:null);
+      // No focus: the whole graph, or the selected group alone (the rest is hidden).
+      node.style("opacity",null);
+      label.style("opacity",null);
+      link.style("stroke-opacity",null);
       return;
     }
-    const near=neighbours.get(id);
+    // Inside a group a focus only reaches the members: hidden co-authors stay hidden.
+    const near=selGroup?new Set([...neighbours.get(id)].filter(x=>selGroup.set.has(x))):neighbours.get(id);
     forcedLabels=near; applyLabelVis();
     node.style("opacity",o=>near.has(o.id)?1:.15);
     label.style("opacity",o=>near.has(o.id)?1:.15);
@@ -2443,7 +2456,7 @@ function drawMeshGraph(pairs){
   if(hintClear) hintClear.onclick=()=>clearPin();
   function updateHint(){ if(hint) hint.classList.toggle("pinned",!!pinnedId); }
   function pinFocus(id){
-    if(!neighbours.has(id)) return;
+    if(!neighbours.has(id)||!inGroup(nodeMap.get(id))) return;
     clearTimeout(hoverTimer); clearTimeout(leaveTimer);
     pinnedId=id; applyFocus(id); renderNeighbours(); updateHint(); applyNodeStyle();
   }
@@ -2481,9 +2494,10 @@ function drawMeshGraph(pairs){
   meshEscape=onEscapeKey;
 
   // Groups panel: one button per group of 3+ authors (at most 12), under a
-  // closed <details> above the graph. A selected group keeps its members at
-  // full strength, dims the rest the way a pin does, flies the view to the
-  // group and limits the label candidates to its members. Colours stay tiers.
+  // closed <details> above the graph. A selected group shows only its members
+  // and the links between them (the rest is display:none and cannot be
+  // picked), flies the view to the group and limits the label candidates to
+  // its members. A hover or pin still works inside it. Colours stay tiers.
   const GROUP_MIN=3, GROUP_MAX=12;
   const listed=groups.filter(g=>g.members.length>=GROUP_MIN);
   const shown=listed.slice(0,GROUP_MAX);
@@ -2495,24 +2509,38 @@ function drawMeshGraph(pairs){
       b.setAttribute("aria-pressed",selGroup&&String(selGroup.id)===b.getAttribute("data-group")?"true":"false");
     });
   }
+  // Clearing restores the full graph and flies back to the view from before
+  // the first group was selected, so the graph is exactly as it was.
   function clearGroup(){
     if(!selGroup) return false;
     selGroup=null; applyFocus(pinnedId); syncGroupButtons(); updateLabels();
+    if(preGroupView){
+      const back=preGroupView; preGroupView=null;
+      svg.transition().duration(450).call(zoom.transform,back).on("end",updateLabels);
+    }
     return true;
   }
   function selectGroup(id){
     const g=groups.find(o=>o.id===id);
     if(!g) return;
     if(selGroup&&selGroup.id===id){ clearGroup(); return; }
+    if(!selGroup) preGroupView=d3.zoomTransform(svg.node());
     selGroup={id:g.id,members:g.members,set:new Set(g.members)};
+    // A pin or a candidate outside the new group would point at a hidden node.
+    if(candidate&&!inGroup(candidate)) setCandidate(null);
+    if(pinnedId&&!selGroup.set.has(pinnedId)){ pinnedId=null; renderNeighbours(); updateHint(); applyNodeStyle(); }
+    else if(pinnedId) renderNeighbours();
     applyFocus(pinnedId); syncGroupButtons(); updateLabels();
     // Fly to the group's bounding box: the same padding as the first fit.
     const mem=nodes.filter(d=>selGroup.set.has(d.id));
     const gx0=Math.min(...mem.map(d=>d.x))-pad, gx1=Math.max(...mem.map(d=>d.x))+pad;
     const gy0=Math.min(...mem.map(d=>d.y))-pad, gy1=Math.max(...mem.map(d=>d.y))+pad;
     const gk=Math.max(0.1,Math.min(2.5,0.9*Math.min(W/Math.max(gx1-gx0,1),H/Math.max(gy1-gy0,1))));
+    // updateLabels once more when the flight ENDS: the per-frame runs during
+    // it measured intermediate zooms.
     svg.transition().duration(450).call(zoom.transform,
-      d3.zoomIdentity.translate(W/2-gk*(gx0+gx1)/2,H/2-gk*(gy0+gy1)/2).scale(gk));
+      d3.zoomIdentity.translate(W/2-gk*(gx0+gx1)/2,H/2-gk*(gy0+gy1)/2).scale(gk))
+      .on("end",updateLabels);
   }
   meshGroupEscape=clearGroup;
   if(groupsEl&&groupsBody){
@@ -2546,7 +2574,7 @@ function drawMeshGraph(pairs){
   // the graph and the PNG export both read this, so they cannot disagree.
   function pinnedRows(){
     if(!pinnedId) return [];
-    return links.filter(l=>l.source.id===pinnedId||l.target.id===pinnedId)
+    return links.filter(l=>(l.source.id===pinnedId||l.target.id===pinnedId)&&inGroup(l.source)&&inGroup(l.target))
       .map(l=>({o:l.source.id===pinnedId?l.target:l.source,w:l.weight}))
       .sort((a,b)=>b.w-a.w||a.o.id.localeCompare(b.o.id));
   }
