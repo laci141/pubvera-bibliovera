@@ -491,13 +491,26 @@ test("T10 under the enforced style policy the real page raises no style-src and 
   // Pin the hub (the largest dot): the co-author list draws tier swatches too.
   // The pointer has to reach it first: hover sets the pick candidate.
   await page.locator("#graphWrap").scrollIntoViewIfNeeded();
-  const hub = await page.locator("#graphWrap svg circle").evaluateAll(els => {
-    const e = els.reduce((a, b) => (Number(b.getAttribute("r")) > Number(a.getAttribute("r")) ? b : a));
-    const r = e.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  await page.mouse.move(hub.x - 2, hub.y);
-  await page.mouse.move(hub.x, hub.y);
+  // The run's revealResults() scrolls the modal smoothly, so the hub can still
+  // be moving on screen: measure it until two frames in a row agree, then
+  // hover until the page has really picked it (#graphWrap.near) before the
+  // click, so the click never lands on a stale position.
+  const hubAt = () => page.locator("#graphWrap svg circle").evaluateAll(els => new Promise(res => {
+    const at = () => {
+      const e = els.reduce((a, b) => (Number(b.getAttribute("r")) > Number(a.getAttribute("r")) ? b : a));
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    };
+    const a = at();
+    requestAnimationFrame(() => requestAnimationFrame(() => { const b = at(); res(a.x === b.x && a.y === b.y ? b : null); }));
+  }));
+  let hub = null;
+  await expect.poll(async () => (hub = await hubAt()) !== null).toBe(true);
+  await expect(async () => {
+    await page.mouse.move(hub.x - 2, hub.y);
+    await page.mouse.move(hub.x, hub.y);
+    await expect(page.locator("#graphWrap")).toHaveClass(/\bnear\b/, { timeout: 500 });
+  }).toPass();
   await page.mouse.click(hub.x, hub.y);
   await expect(page.locator("#gNeigh li")).toHaveCount(19);
   expect(await page.locator("#gNeigh li i").first().evaluate(e => getComputedStyle(e).backgroundColor)).toMatch(/^rgb\(/);
