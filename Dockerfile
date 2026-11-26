@@ -70,7 +70,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X main.a
 FROM alpine:3.24
 # CVE-2026-4738: the base layer ships zlib 1.3.2-r1; upgrade only zlib to the
 # fixed 1.4-r0 (same fix as recallis and corpova), never a bare apk upgrade.
-RUN apk add --no-cache ca-certificates wget && apk upgrade --no-cache zlib && adduser -D -u 10001 app
+# OpenSSL: libcrypto3 and libssl3 3.5.9-r0 have CVEs fixed in 3.5.9-r1; they are
+# upgraded by name like zlib, never a bare apk upgrade.
+RUN apk add --no-cache ca-certificates wget && apk upgrade --no-cache zlib libcrypto3 libssl3 && adduser -D -u 10001 app
 WORKDIR /app
 COPY --from=web-builder /out/server ./server
 COPY --from=cli-builder /go/bin/thelancet-pp-cli ./thelancet
